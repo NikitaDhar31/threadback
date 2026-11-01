@@ -10,8 +10,8 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
-from . import dashboard, hooks, startup, store
-from .sources import ago, context, suggest_resume
+from . import dashboard, digest, hooks, startup, store
+from .sources import ago, context, last_work, suggest_resume
 
 
 # ---------------------------------------------------------------- helpers
@@ -89,6 +89,10 @@ def brief(project: dict, ctx: dict) -> str:
         out.append(f"\nNEXT ACTION: {p['next_action']}")
     if p["last_state"]:
         out.append(f"\nWhere you left off:\n  {p['last_state']}")
+    if not p["sessions"] and not p["next_action"]:
+        seen = last_work(ctx)
+        out.append("\nNothing saved yet." + (f" Seen in the folder: {seen}." if seen else "") +
+                   "\n  Run /threadback-save in a Claude Code chat here to catch up from its history.")
     if p["sessions"]:
         s = p["sessions"][-1]
         out.append(f"\nLast saved session ({s['date']}):\n  {s.get('summary') or '-'}")
@@ -235,6 +239,13 @@ def _interactive_save(p: dict, a) -> None:
     a.status = status if status in store.STATUSES and status != p["status"] else None
 
 
+def cmd_digest(a) -> None:
+    p = store.find(a.name) if a.name else store.find_by_folder(os.getcwd())
+    folder = p["folder"] if p and p["folder"] else os.getcwd()
+    since = None if a.all or p is None else digest.last_saved(p)
+    print(digest.build(folder, since, n_chats=a.chats))
+
+
 def cmd_link(a) -> None:
     p = store.find(a.name)
     if a.label.lower() == "folder":
@@ -345,6 +356,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--status", choices=store.STATUSES)
     s.add_argument("--link", action="append", help="'label | url' of a conversation used")
     s.set_defaults(fn=cmd_save)
+
+    s = sub.add_parser("digest", help="short summary of commits and Claude chats in the folder "
+                                      "(since the last save; free, no AI)")
+    s.add_argument("name", nargs="?")
+    s.add_argument("--all", action="store_true", help="ignore the last save; summarize everything recent")
+    s.add_argument("--chats", type=int, default=4, help="how many recent Claude chats to include")
+    s.set_defaults(fn=cmd_digest)
 
     s = sub.add_parser("link", help="add/replace a link (ChatGPT, Claude, repo...), or set 'folder'")
     s.add_argument("name")

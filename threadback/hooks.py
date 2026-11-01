@@ -15,10 +15,11 @@ import os
 import sys
 import traceback
 
-from . import store
+from . import digest, store
 from .sources import ago, context
 
 MAX_CONTEXT_CHARS = 3500
+DIGEST_CHARS = 1800
 
 
 def run(event: str) -> None:
@@ -46,12 +47,14 @@ def session_start(payload: dict) -> dict:
     p = _project_for(payload)
     if p is None:
         text = ("ThreadBack: this folder is not a tracked project. If the user wants to track it, "
-                "/threadback-save registers it.")
+                "/threadback-save registers it and can catch up from the folder's history.")
     else:
         if payload.get("session_id"):
             store.record_claude_session(p, payload["session_id"])
             store.save(p)
         text = brief_for_claude(p, context(p))
+        if not p["sessions"] and not p["next_action"]:
+            text += catch_up_hint(p)
     return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}
 
 
@@ -61,6 +64,15 @@ def session_end(payload: dict) -> None:
         store.record_claude_session(p, payload["session_id"], ended=True)
         store.save(p)
     return None
+
+
+def catch_up_hint(p: dict) -> str:
+    """Nothing saved yet: hand Claude a short digest so it still knows what happened here."""
+    d = digest.build(p["folder"], max_chars=DIGEST_CHARS, n_chats=2, messages=4) if p["folder"] else ""
+    return ("\nNothing has been saved for this project yet. Automatic digest of the folder "
+            "(commits and earlier Claude chats, may be partial):\n" + d +
+            "\nIf the user asks what they were doing, answer from this. Suggest /threadback-save "
+            "to save a proper catch-up.")
 
 
 def brief_for_claude(p: dict, ctx: dict) -> str:

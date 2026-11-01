@@ -35,6 +35,7 @@ Project names match loosely (`show my` finds "My Project" if unambiguous).
 | `list [--all]` (default) | Projects by last activity, with a "Resume:" pick |
 | `show NAME` | Next action, last state, blockers, open tasks, decisions + why, ideas, git, Claude Code sessions, links |
 | `save NAME` | Interactive session summary. Non-interactive flags: `-s` summary, `--state`, `-n` next, `-d "decision \| why"`, `-t` task, `--done N`, `-b` blocker, `--unblock N`, `-i` idea, `--status`, `--link` |
+| `digest [NAME] [--all] [--chats N]` | Short summary of the folder's commits, README and earlier Claude chats since the last save (`--all`: everything recent). Local and free, no AI |
 | `link NAME LABEL URL` | Add/replace a link (ChatGPT chat, Claude chat, GitHub repo...). `LABEL=folder` sets the folder |
 | `open NAME [LABEL\|folder\|claude]` | Open a link or the folder; `claude` prints the `claude --resume` command |
 | `edit NAME` | Open the project's JSON in `$EDITOR` / default app |
@@ -52,6 +53,11 @@ This repo is also a Claude Code plugin (`.claude-plugin/`, `hooks/`, `commands/`
 - **`/threadback`:** shows where you left off.
 - **`/threadback-save [note]`:** Claude writes the summary, decisions and next step
   for you. In an untracked folder it registers the folder as a new project.
+- **Catching up old projects:** open a new chat in the folder and run `/threadback-save`.
+  With nothing to save from the chat itself, Claude reads `tb digest` (a page-sized,
+  pre-filtered summary of commits and earlier chats) rather than the raw transcripts,
+  so a catch-up costs about as much as a short chat. Until a project has a save, new
+  chats there also get a short digest at session start.
 
 Hooks use only the documented hook input (`session_id`, `cwd`), so they keep working
 if Claude Code changes its transcript format. Hook errors never block a session; they
@@ -112,5 +118,4 @@ py -m unittest discover -s tests -t .
 ## Possible next steps
 
 - Import ChatGPT's official data export to auto-link conversations by project.
-- Detect unfinished work from TODOs / task lists / recent commits.
 - Optional AI-generated resumption brief from the saved context.

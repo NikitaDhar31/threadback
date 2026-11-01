@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Pick a Python 3 interpreter (Windows "py" launcher first) and run ThreadBack.
 here="$(dirname "$0")"
+# Git Bash rewrites arguments that start with "/" into Windows paths
+# ("/threadback-next" -> "C:/Program Files/Git/threadback-next"); keep notes as typed.
+export MSYS2_ARG_CONV_EXCL="*"
 if command -v py >/dev/null 2>&1; then
   exec py -3 "$here/tb.py" "$@"
 elif command -v python3 >/dev/null 2>&1; then

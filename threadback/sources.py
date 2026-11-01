@@ -58,19 +58,35 @@ def claude_dir_for(folder: str) -> Path:
     return claude_projects_root() / re.sub(r"[^A-Za-z0-9]", "-", str(folder))
 
 
+_TIMESTAMP = re.compile(r'"timestamp"\s*:\s*"([^"]+)"')
+
+
+def last_message_time(path: Path, tail: int = 65536) -> datetime:
+    """When a chat really last had a message. The file's modified time is not enough:
+    copying or syncing the folder resets it, making old chats look new."""
+    mtime = datetime.fromtimestamp(path.stat().st_mtime).replace(microsecond=0)
+    try:
+        with path.open("rb") as fh:
+            fh.seek(max(0, path.stat().st_size - tail))
+            found = _TIMESTAMP.findall(fh.read().decode("utf-8", errors="replace"))
+    except OSError:
+        return mtime
+    times = [t for t in (_to_local(x.replace("Z", "+00:00")) for x in found) if t]
+    return max(times) if times else mtime
+
+
 def claude_sessions(folder: str, limit: int = 3) -> list[dict]:
     """Most recent Claude Code sessions started in `folder`, newest first."""
     if not folder:
         return []
     d = claude_dir_for(folder)
     try:
-        files = sorted(d.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
+        dated = sorted(((last_message_time(f), f) for f in d.glob("*.jsonl")), reverse=True)[:limit]
     except OSError:
         return []
     sessions = []
-    for f in files:
-        s = {"id": f.stem, "title": "", "last_prompt": "",
-             "last_active": datetime.fromtimestamp(f.stat().st_mtime).replace(microsecond=0)}
+    for when, f in dated:
+        s = {"id": f.stem, "title": "", "last_prompt": "", "last_active": when}
         try:
             with f.open(encoding="utf-8", errors="replace") as fh:
                 for line in fh:
@@ -145,6 +161,19 @@ def context(project: dict) -> dict:
         candidates.append(claude[0]["last_active"])
     candidates = [c for c in candidates if c]
     return {"git": git, "claude": claude, "last_activity": max(candidates) if candidates else None}
+
+
+def last_work(ctx: dict) -> str:
+    """One line on the most recent work seen in the folder, for projects with nothing saved."""
+    git, chats = ctx.get("git"), ctx.get("claude") or []
+    commit = (git["last_commit"], f"last commit: {git['last_commit_msg']}")         if git and git["last_commit"] else None
+    chat = None
+    if chats:
+        title = chats[0]["title"] or chats[0]["last_prompt"][:70]
+        if title:
+            chat = (chats[0]["last_active"], f"last chat: {title}")
+    newest = max((x for x in (commit, chat) if x), key=lambda x: x[0], default=None)
+    return f"{newest[1]} ({ago(newest[0])})" if newest else ""
 
 
 def suggest_resume(projects_with_ctx: list[tuple[dict, dict]]) -> tuple[dict, dict] | None:

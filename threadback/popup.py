@@ -10,7 +10,7 @@ import webbrowser
 from datetime import datetime
 
 from . import dashboard, store
-from .sources import ago, context, suggest_resume
+from .sources import ago, context, last_work, suggest_resume
 
 INK, MUTED, ACCENT = "#1d2330", "#667085", "#3557d4"
 
@@ -59,19 +59,22 @@ def show() -> None:
         d.transient(root)
         d.grab_set()
         label(d, p["name"], 13, True)
-        label(d, "What did you do? (optional)", 9, True, MUTED, pad=(8, 2))
+        label(d, "What did you do?", 9, True, MUTED, pad=(8, 2))
         did = tk.Text(d, width=56, height=3, font=("Segoe UI", 10), wrap="word")
         did.pack(fill="x")
-        label(d, "Next step - what should you do when you come back?", 9, True, MUTED, pad=(10, 2))
+        label(d, "Next step - what should you do when you come back? (optional)", 9, True, MUTED, pad=(10, 2))
         nxt = tk.Entry(d, width=56, font=("Segoe UI", 10))
         nxt.insert(0, p["next_action"])
         nxt.pack(fill="x")
         status = label(d, "", 9, color=MUTED, pad=(6, 0))
+        if not p["sessions"]:
+            label(d, "Don't remember? Open a Claude Code chat in this folder and run /threadback-save: "
+                     "it catches up from the folder's commits and earlier chats.", 9, color=MUTED, wrap=440)
 
         def do_save(_event=None):
             text, step = did.get("1.0", "end").strip(), nxt.get().strip()
             if not text and step == p["next_action"]:
-                status.config(text="Nothing changed - type what you did or a new next step.", fg="#b42318")
+                status.config(text="Type what you did, a next step, or both - either one is enough.", fg="#b42318")
                 return
             quick_save(p["slug"], text, step)
             d.destroy()
@@ -109,12 +112,13 @@ def show() -> None:
             for p, ctx in data["others"]:
                 row = tk.Frame(body)
                 row.pack(fill="x", pady=1)
-                text = f"{p['name']}  ({ago(ctx['last_activity'])})\nnext: {p['next_action'] or '-'}"
+                hint = f"next: {p['next_action']}" if p["next_action"] else last_work(ctx) or "next: -"
+                text = f"{p['name']}  ({ago(ctx['last_activity'])})\n{hint}"
                 tk.Label(row, text=text, font=("Segoe UI", 9), fg=INK, justify="left", anchor="w",
                          wraplength=400).pack(side="left", fill="x", expand=True)
                 button(row, "Save", lambda p=p: save_dialog(p))
 
-        label(body, "Stopping work? Click Save on the project and write your next step.",
+        label(body, "Stopping work? Click Save and write what you did, your next step, or both.",
               9, color=MUTED, pad=(12, 0))
         bottom = tk.Frame(body)
         bottom.pack(fill="x", pady=(12, 0))

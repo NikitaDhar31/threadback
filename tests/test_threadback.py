@@ -140,6 +140,18 @@ class SourceTests(TempHome):
         self.assertEqual(s[0]["title"], "Auth refactor")
         self.assertEqual(s[0]["last_prompt"], "finish the login form")
 
+    def test_chat_date_comes_from_messages_not_file_time(self):
+        # Copying/syncing a folder resets file times; old chats must not look new.
+        d = self.tmp / "claude" / "D--Work-App"
+        d.mkdir(parents=True)
+        for name, ts in (("old", "2026-09-01T10:00:00.000Z"), ("new", "2026-10-01T10:00:00.000Z")):
+            (d / f"{name}.jsonl").write_text(json.dumps({"type": "user", "timestamp": ts}) + "\n",
+                                             encoding="utf-8")
+        os.utime(d / "old.jsonl")  # touched last, but its messages are older
+        s = sources.claude_sessions(r"D:\Work\App")
+        self.assertEqual([x["id"] for x in s], ["new", "old"])
+        self.assertEqual(s[0]["last_active"].date().isoformat(), "2026-10-01")
+
     def test_claude_sessions_missing_dir(self):
         self.assertEqual(sources.claude_sessions(r"C:\nowhere"), [])
         self.assertEqual(sources.claude_sessions(""), [])
@@ -322,6 +334,14 @@ class PopupTests(TempHome):
         # A quick save makes the project the one to resume.
         self.assertEqual(popup.summary()["pick"][0]["name"], "Demo")
 
+    def test_quick_save_without_next_step(self):
+        from threadback import popup
+        store.save(store.new_project("Demo"))
+        popup.quick_save("demo", "looked around the code", "")
+        p = store.find("demo")
+        self.assertEqual(p["next_action"], "")
+        self.assertEqual(p["sessions"][0]["summary"], "looked around the code")
+
     def test_window_builds(self):
         import tkinter
         from threadback import popup
@@ -343,6 +363,74 @@ class PopupTests(TempHome):
             popup.show()
         self.assertIn("RESUME THIS", built["labels"])
         self.assertIn("Next: next", built["labels"])
+
+
+class DigestTests(TempHome):
+    def make_folder(self):
+        """A git repo with a README and one earlier Claude chat full of noise."""
+        folder = self.tmp / "old app"
+        folder.mkdir()
+        (folder / "README.md").write_text("# Old App\n\nTracks garden watering.\n", encoding="utf-8")
+        g = lambda *a: subprocess.run(["git", "-C", str(folder), *a], check=True, capture_output=True)
+        g("init", "-q")
+        g("add", ".")
+        g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "Add watering schedule")
+        d = sources.claude_dir_for(str(folder))
+        d.mkdir(parents=True)
+        lines = [
+            {"type": "custom-title", "customTitle": "Reminder emails"},
+            {"type": "user", "message": {"content": "add email reminders before watering"}},
+            {"type": "user", "message": {"content": [{"type": "tool_result", "content": "x" * 5000}]}},
+            {"type": "user", "isMeta": True, "message": {"content": "meta noise"}},
+            {"type": "user", "message": {"content": "<command-name>/clear</command-name>"}},
+            {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read"}]}},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Reminders work; SMTP not set up yet."}]}},
+        ]
+        chat = d / "chat-1.jsonl"
+        chat.write_text("\n".join(map(json.dumps, lines)) + "\n", encoding="utf-8")
+        t = (datetime.now() + timedelta(seconds=30)).timestamp()  # chat after the commit
+        os.utime(chat, (t, t))
+        return folder
+
+    def test_digest_keeps_what_matters_and_drops_noise(self):
+        from threadback import digest
+        folder = self.make_folder()
+        (folder / "notes.txt").write_text("wip", encoding="utf-8")
+        text = digest.build(str(folder))
+        self.assertIn("Uncommitted changes (1): notes.txt", text)
+        self.assertIn("Tracks garden watering.", text)
+        self.assertIn("Add watering schedule  [README.md]", text)
+        self.assertIn("Claude chat: Reminder emails", text)
+        self.assertIn("- add email reminders before watering", text)
+        self.assertIn("Claude's last answer: Reminders work; SMTP not set up yet.", text)
+        for noise in ("xxxx", "meta noise", "/clear"):
+            self.assertNotIn(noise, text)
+
+    def test_digest_since_last_save_and_size_cap(self):
+        from threadback import digest
+        folder = str(self.make_folder())
+        later = datetime.now() + timedelta(minutes=5)
+        self.assertIn("No commits or Claude Code chats found since then.", digest.build(folder, later))
+        self.assertLessEqual(len(digest.build(folder, max_chars=200)), 200)
+
+    def test_digest_command_and_catch_up_at_session_start(self):
+        folder = self.make_folder()
+        store.save(store.new_project("Old App", folder=str(folder)))
+        self.assertIn("Reminder emails", self.run_cli("digest", "old app"))
+        self.assertIn("Nothing saved yet. Seen in the folder: last chat: Reminder emails",
+                      self.run_cli("show", "old app"))
+        buf = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(json.dumps({"cwd": str(folder)}))), redirect_stdout(buf):
+            cli.main(["hook", "session-start"])
+        ctx = json.loads(buf.getvalue())["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Nothing has been saved for this project yet", ctx)
+        self.assertIn("add email reminders before watering", ctx)
+        # Once something is saved, the digest no longer rides along in every chat.
+        self.run_cli("save", "old app", "-s", "caught up", "-n", "set up SMTP")
+        buf = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(json.dumps({"cwd": str(folder)}))), redirect_stdout(buf):
+            cli.main(["hook", "session-start"])
+        self.assertNotIn("Automatic digest", buf.getvalue())
 
 
 if __name__ == "__main__":
