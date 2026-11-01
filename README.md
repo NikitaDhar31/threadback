@@ -10,7 +10,7 @@ library, no database, no network calls, no credentials.
 ## Quick start
 
 ```bash
-git clone https://github.com/OWNER/threadback.git
+git clone https://github.com/NikitaDhar31/threadback.git
 cd threadback
 py -m threadback new "My Project" --folder "C:\path\to\my-project" --next "first thing to do"
 py -m threadback link "My Project" "ChatGPT: API design" https://chatgpt.com/c/...
@@ -60,7 +60,7 @@ go to `~/.threadback/hook-errors.log`.
 Install from GitHub:
 
 ```bash
-claude plugin marketplace add OWNER/threadback
+claude plugin marketplace add NikitaDhar31/threadback
 claude plugin install threadback@threadback
 ```
 
