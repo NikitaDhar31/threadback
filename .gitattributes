@@ -1,0 +1,4 @@
+# Keep Unix line endings so bash can run the hook launcher on every OS
+* text=auto
+scripts/tb text eol=lf
+*.sh text eol=lf

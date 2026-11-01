@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Pick a Python 3 interpreter (Windows "py" launcher first) and run ThreadBack.
+here="$(dirname "$0")"
+if command -v py >/dev/null 2>&1; then
+  exec py -3 "$here/tb.py" "$@"
+elif command -v python3 >/dev/null 2>&1; then
+  exec python3 "$here/tb.py" "$@"
+else
+  exec python "$here/tb.py" "$@"
+fi

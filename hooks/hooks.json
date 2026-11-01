@@ -1,0 +1,27 @@
+{
+  "description": "ThreadBack: give Claude the project's saved context at session start; record session start/end",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/tb\" hook session-start",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/tb\" hook session-end",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}

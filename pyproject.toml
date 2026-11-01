@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "threadback"
+version = "0.1.0"
+description = "Personal AI work-context recovery dashboard"
+requires-python = ">=3.10"
+
+[project.scripts]
+threadback = "threadback.cli:main"
+
+[tool.setuptools]
+packages = ["threadback"]

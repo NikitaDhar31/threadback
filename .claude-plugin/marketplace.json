@@ -1,0 +1,14 @@
+{
+  "name": "threadback",
+  "description": "ThreadBack: personal work-context recovery for Claude Code",
+  "owner": {
+    "name": "Nikita Dhar"
+  },
+  "plugins": [
+    {
+      "name": "threadback",
+      "source": "./",
+      "description": "Resume where you left off across projects and Claude Code sessions."
+    }
+  ]
+}

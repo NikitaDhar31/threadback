@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+# Personal context data never belongs in the repo
+.threadback/
+*.json.tmp
+config.json
