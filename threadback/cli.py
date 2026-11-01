@@ -217,6 +217,37 @@ def cmd_save(a) -> None:
     print(f"Saved context for {p['name']}.")
 
 
+def cmd_task(a) -> None:
+    """One task edit, as the panel's buttons make them. N is the number in the full list."""
+    p = resolve(a.project)
+    tasks = p["tasks"]
+    if a.action == "add":
+        if not a.arg.strip():
+            raise ValueError("Type the task to add.")
+        tasks.append({"text": a.arg.strip(), "done": False, "added": store.now(), "done_on": ""})
+    else:
+        n = int(a.arg) if a.arg.isdigit() else 0
+        if not 1 <= n <= len(tasks):
+            raise LookupError(f"No task number {a.arg} in {p['name']}.")
+        t = tasks[n - 1]
+        if a.action == "done":
+            t.update(done=True, done_on=store.now())
+        elif a.action == "undo":
+            t.update(done=False, done_on="")
+        elif a.action == "remove":
+            tasks.pop(n - 1)
+        elif a.action == "top":
+            tasks.insert(0, tasks.pop(n - 1))
+        elif a.action == "next":
+            # The task becomes the next step; the old next step goes back on top of the list.
+            tasks.pop(n - 1)
+            if p["next_action"]:
+                tasks.insert(0, {"text": p["next_action"], "done": False, "added": store.now(), "done_on": ""})
+            p["next_action"] = t["text"]
+    store.save(p)
+    print(f"Updated tasks for {p['name']}.")
+
+
 def _interactive_save(p: dict, a) -> None:
     """Fill the save arguments by prompting. Every question can be skipped."""
     print(f"Saving session for {p['name']} - press Enter to skip any question.\n")
@@ -361,6 +392,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--status", choices=store.STATUSES)
     s.add_argument("--link", action="append", help="'label | url' of a conversation used")
     s.set_defaults(fn=cmd_save)
+
+    s = sub.add_parser("task", help="edit one task: add TEXT, or done/undo/remove/top/next N "
+                                    "(N = number in the full list; next makes it the next step)")
+    s.add_argument("action", choices=["add", "done", "undo", "remove", "top", "next"])
+    s.add_argument("arg", help="task text for add, else the task number")
+    s.add_argument("--project", "-p", help="project name or slug (default: this folder's)")
+    s.set_defaults(fn=cmd_task)
 
     s = sub.add_parser("digest", help="short summary of commits and Claude chats in the folder "
                                       "(since the last save; free, no AI)")

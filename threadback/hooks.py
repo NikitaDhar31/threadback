@@ -45,7 +45,21 @@ def _project_for(payload: dict) -> dict | None:
     return store.find_by_folder(payload.get("cwd") or os.getcwd())
 
 
+def note_tb_path() -> None:
+    """Tell the optional panel plugin where this plugin's tb.py is: installed plugins
+    live in a different folder on every machine and after every update."""
+    tb = str(Path(__file__).resolve().parent.parent / "scripts" / "tb.py")
+    f = store.home() / "tb-path"
+    try:
+        if not f.exists() or f.read_text(encoding="utf-8") != tb:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(tb, encoding="utf-8")
+    except OSError:
+        pass  # only the panel's buttons need it
+
+
 def session_start(payload: dict) -> dict:
+    note_tb_path()
     p = _project_for(payload)
     if p is None:
         text = ("ThreadBack: this folder is not a tracked project. If the user wants to track it, "

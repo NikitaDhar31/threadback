@@ -540,5 +540,78 @@ class RedactTests(TempHome):
         self.assertIn("Add key [REDACTED]", text)
 
 
+class NoPythonTests(unittest.TestCase):
+    """scripts/tb with no usable Python on PATH: say so instead of failing silently."""
+
+    def run_tb(self, *args):
+        import shutil
+        bash = shutil.which("bash")
+        # Windows' System32 bash is WSL, a different machine; only test a real bash.
+        if not bash or "system32" in bash.lower():
+            self.skipTest("needs bash (Git Bash on Windows)")
+        tb = Path(__file__).resolve().parent.parent / "scripts" / "tb"
+        env = {**os.environ, "PATH": str(Path(bash).parent)}  # bash's own folder, no Python
+        return subprocess.run([bash, str(tb), *args], input="{}", capture_output=True,
+                              text=True, env=env, timeout=30)
+
+    def test_session_start_tells_the_user(self):
+        ran = self.run_tb("hook", "session-start")
+        self.assertEqual(ran.returncode, 0)  # never breaks the session
+        out = json.loads(ran.stdout)
+        self.assertIn("needs Python 3.10", out["systemMessage"])
+        self.assertIn("needs Python 3.10", out["hookSpecificOutput"]["additionalContext"])
+
+    def test_session_end_stays_quiet_and_commands_explain(self):
+        ended = self.run_tb("hook", "session-end")
+        self.assertEqual((ended.returncode, ended.stdout), (0, ""))
+        shown = self.run_tb("show")
+        self.assertEqual(shown.returncode, 1)
+        self.assertIn("python.org", shown.stderr)
+
+
+class TaskEditTests(TempHome):
+    """`tb task`, which the panel's buttons call."""
+
+    def tasks(self):
+        p = store.find("Shop")
+        return [(t["text"], t["done"]) for t in p["tasks"]], p["next_action"]
+
+    def setUp(self):
+        super().setUp()
+        self.run_cli("new", "Shop")
+        self.run_cli("save", "Shop", "-n", "Ship v1", "-t", "A", "-t", "B", "-t", "C")
+
+    def test_add_done_undo_remove(self):
+        self.run_cli("task", "add", "D", "-p", "Shop")
+        self.run_cli("task", "done", "2", "-p", "Shop")
+        self.assertEqual(self.tasks()[0], [("A", False), ("B", True), ("C", False), ("D", False)])
+        self.assertTrue(store.find("Shop")["tasks"][1]["done_on"])
+        self.run_cli("task", "undo", "2", "-p", "Shop")
+        self.run_cli("task", "remove", "1", "-p", "Shop")
+        self.assertEqual(self.tasks()[0], [("B", False), ("C", False), ("D", False)])
+
+    def test_top_and_next(self):
+        self.run_cli("task", "top", "3", "-p", "Shop")
+        self.assertEqual([t for t, _ in self.tasks()[0]], ["C", "A", "B"])
+        self.run_cli("task", "next", "2", "-p", "Shop")  # A becomes the next step
+        tasks, nxt = self.tasks()
+        self.assertEqual(nxt, "A")
+        self.assertEqual([t for t, _ in tasks], ["Ship v1", "C", "B"])  # old next step kept
+
+    def test_bad_input_is_refused(self):
+        with self.assertRaises(SystemExit):
+            self.run_cli("task", "done", "9", "-p", "Shop")
+        with self.assertRaises(SystemExit):
+            self.run_cli("task", "add", "  ", "-p", "Shop")
+        self.assertEqual(len(self.tasks()[0]), 3)
+
+    def test_session_start_tells_the_panel_where_tb_is(self):
+        from threadback import hooks
+        hooks.note_tb_path()
+        tb = Path((store.home() / "tb-path").read_text(encoding="utf-8"))
+        self.assertEqual(tb.name, "tb.py")
+        self.assertTrue(tb.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

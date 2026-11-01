@@ -1,13 +1,27 @@
 #!/usr/bin/env bash
-# Pick a Python 3 interpreter (Windows "py" launcher first) and run ThreadBack.
+# Pick a Python 3.10+ interpreter (Windows "py" launcher first) and run ThreadBack.
 here="$(dirname "$0")"
 # Git Bash rewrites arguments that start with "/" into Windows paths
 # ("/threadback-next" -> "C:/Program Files/Git/threadback-next"); keep notes as typed.
 export MSYS2_ARG_CONV_EXCL="*"
-if command -v py >/dev/null 2>&1; then
-  exec py -3 "$here/tb.py" "$@"
-elif command -v python3 >/dev/null 2>&1; then
-  exec python3 "$here/tb.py" "$@"
-else
-  exec python "$here/tb.py" "$@"
+
+# Run each candidate rather than trusting `command -v`: Windows ships a "python"
+# that only opens the Microsoft Store, and an old Python 2 or 3.9 may be first on PATH.
+works='import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'
+for python in "py -3" python3 python; do
+  if $python -c "$works" >/dev/null 2>&1; then
+    exec $python "$here/tb.py" "$@"
+  fi
+done
+
+# No usable Python. Hook output is otherwise dropped, so say it where it is seen:
+# at session start as a message to the user (and to Claude), elsewhere on stderr.
+msg="ThreadBack needs Python 3.10 or newer and could not find it, so it is not saving or showing project context. Install Python from https://www.python.org/downloads/ (on Windows, tick 'Add python.exe to PATH'), then restart Claude."
+if [ "$1" = hook ]; then
+  if [ "$2" = session-start ]; then
+    printf '{"systemMessage": "%s", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "%s If the user asks about ThreadBack, tell them this."}}\n' "$msg" "$msg"
+  fi
+  exit 0  # never block or break a session over it
 fi
+echo "$msg" >&2
+exit 1

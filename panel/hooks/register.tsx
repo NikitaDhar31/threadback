@@ -6,14 +6,26 @@ import type { ProjectView } from '../types'
 const PANE = 'threadback'
 const TITLE = 'ThreadBack'
 const REFRESH_MS = 30_000 // picks up saves made from the welcome window
-// Change the tag when ProjectView's fields change: it declines what an earlier
+// Change a tag when that value's fields change: it declines what an earlier
 // version stored, which outlives a reload.
 const project = atom({ plugin: 'threadback-panel', key: 'project' } as const, null, {
-  shape: 'project-1',
+  shape: 'project-2',
 })
+const showDone = atom({ plugin: 'threadback-panel', key: 'showDone' } as const, false, {
+  shape: 'show-done-1',
+})
+const error = atom({ plugin: 'threadback-panel', key: 'error' } as const, '', {
+  shape: 'error-1',
+})
+// True for a moment after "Do next", so the eye follows the task into Next step.
+const flash = atom({ plugin: 'threadback-panel', key: 'flash' } as const, false, {
+  shape: 'flash-1',
+})
+const FLASH_MS = 2_500
 
 type Saved = {
   name: string
+  slug: string
   folder?: string
   status?: string
   updated?: string
@@ -23,6 +35,8 @@ type Saved = {
   blockers?: { text: string }[]
   auto_saves?: unknown[]
 }
+
+type Action = 'add' | 'done' | 'undo' | 'remove' | 'top' | 'next'
 
 const norm = (path: string) => path.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
 
@@ -55,13 +69,11 @@ async function load($: EngineInterface): Promise<ProjectView | null> {
   }
   if (best === null) return null
   return {
+    slug: best.slug,
     name: best.name,
     next: best.next_action ?? '',
     state: best.last_state ?? '',
-    tasks: (best.tasks ?? [])
-      .map((t, i) => ({ n: i + 1, text: t.text, done: t.done }))
-      .filter(t => !t.done)
-      .map(({ n, text }) => ({ n, text })),
+    tasks: (best.tasks ?? []).map((t, i) => ({ n: i + 1, text: t.text, done: t.done })),
     blockers: (best.blockers ?? []).map(b => b.text),
     unsaved: (best.auto_saves ?? []).length,
     updated: best.updated ?? '',
@@ -71,6 +83,35 @@ async function load($: EngineInterface): Promise<ProjectView | null> {
 async function refresh($: EngineInterface): Promise<void> {
   const view = await load($).catch(() => null)
   await update($, project, () => view)
+}
+
+/** One task edit through ThreadBack's own tb.py, so the file format, redaction and
+ *  saving stay in one place. ThreadBack's session-start hook writes where tb.py is. */
+async function act($: EngineInterface, slug: string, action: Action, arg: string): Promise<void> {
+  const tb = (await $.fs.read(`${await dataDir($)}/tb-path`).catch(() => '')).trim()
+  if (tb === '') {
+    await update($, error, () => 'Open a new chat once so ThreadBack can tell the panel where it is installed.')
+    return
+  }
+  for (const python of [['py', '-3'], ['python3'], ['python']]) {
+    let ran
+    try {
+      ran = await $.process.run([...python, tb, 'task', action, arg, '--project', slug], {
+        timeoutMs: 20_000,
+      })
+    } catch {
+      continue // this interpreter isn't installed; try the next
+    }
+    const said = (ran.stderr || ran.stdout).trim()
+    await update($, error, () => (ran.exitCode === 0 ? '' : said || `tb task ${action} failed.`))
+    await refresh($)
+    if (action === 'next' && ran.exitCode === 0) {
+      await update($, flash, () => true)
+      $.clock.after(FLASH_MS, () => update($, flash, () => false))
+    }
+    return
+  }
+  await update($, error, () => 'Python 3 was not found, so the panel cannot change tasks.')
 }
 
 let timer: { cancel: () => void } | undefined
@@ -105,8 +146,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Button, Input } = $.ui.resolve(e)
     const p = await read($, project)
+    const problem = await read($, error)
 
     if (p === null) {
       return (
@@ -117,16 +159,32 @@ export const register: Register = on => {
       )
     }
 
+    const edit = (action: Action, arg: string | number) => () => void act($, p.slug, action, String(arg))
+    const open = p.tasks.filter(t => !t.done)
+    const done = p.tasks.filter(t => t.done)
+    const isShowingDone = await read($, showDone)
+    const isFlashing = await read($, flash)
+
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
           <Text bold>{p.name}</Text>
           {p.updated !== '' && <Text dimColor>Saved {p.updated}</Text>}
         </Box>
-        <Box flexDirection="column">
-          <Text bold color="suggestion">Next step</Text>
-          <Text>{p.next || 'No next step saved yet.'}</Text>
-        </Box>
+        {isFlashing ? (
+          <Box key="next-step" flexDirection="column" borderStyle="round" borderColor="suggestion" paddingX={1}>
+            <Box flexDirection="row" gap={2}>
+              <Text bold color="suggestion">Next step</Text>
+              <Text dimColor>moved here</Text>
+            </Box>
+            <Text bold>{p.next}</Text>
+          </Box>
+        ) : (
+          <Box key="next-step" flexDirection="column">
+            <Text bold color="suggestion">Next step</Text>
+            <Text>{p.next || 'No next step saved yet.'}</Text>
+          </Box>
+        )}
         {p.state !== '' && (
           <Box flexDirection="column">
             <Text bold>Where you left off</Text>
@@ -139,12 +197,59 @@ export const register: Register = on => {
             {p.blockers.map(b => <Text>- {b}</Text>)}
           </Box>
         )}
-        {p.tasks.length > 0 && (
-          <Box flexDirection="column">
-            <Text bold>Open tasks ({p.tasks.length})</Text>
-            {p.tasks.map(t => <Text>{t.n}. {t.text}</Text>)}
+        <Box flexDirection="column">
+          {open.length > 0 && <Text bold>Open tasks ({open.length})</Text>}
+          {/* A narrow pane wraps each task over several lines: the text gets the full
+              width, ☐ sits on its first line, the actions go on a dim line beneath,
+              and a blank line separates one task from the next. */}
+          {open.map((t, i) => (
+            <Box key={`task-${t.n}`} flexDirection="column" marginTop={i > 0 ? 1 : 0}>
+              <Box flexDirection="row" gap={1} alignItems="flex-start">
+                <Button key={`done-${t.n}`} label="☐" plain onPress={edit('done', t.n)} />
+                <Box flexGrow={1} flexShrink={1}>
+                  <Text wrap="wrap">{t.text}</Text>
+                </Box>
+              </Box>
+              <Box flexDirection="row" gap={2} marginLeft={3}>
+                {i > 0 && <Button key={`top-${t.n}`} label="↑" plain dimColor onPress={edit('top', t.n)} />}
+                <Button key={`next-${t.n}`} label="Do next" plain dimColor onPress={edit('next', t.n)} />
+                <Button key={`remove-${t.n}`} label="✕" plain dimColor onPress={edit('remove', t.n)} />
+              </Box>
+            </Box>
+          ))}
+          {done.length > 0 && (
+            <Box marginTop={1}>
+              <Button
+                key="toggle-done"
+                label={`${isShowingDone ? 'Hide' : 'Show'} done (${done.length})`}
+                plain
+                dimColor
+                onPress={() => void update($, showDone, shown => !shown)}
+              />
+            </Box>
+          )}
+          {isShowingDone &&
+            done.map(t => (
+              <Box key={`task-${t.n}`} flexDirection="row" gap={1} alignItems="flex-start" marginTop={1}>
+                <Button key={`undo-${t.n}`} label="☑" plain dimColor onPress={edit('undo', t.n)} />
+                <Box flexGrow={1} flexShrink={1}>
+                  <Text wrap="wrap" dimColor strikethrough>{t.text}</Text>
+                </Box>
+              </Box>
+            ))}
+          <Box marginTop={1}>
+            <Input
+              key="add"
+              placeholder="Add a task"
+              submitLabel="add"
+              value=""
+              onSubmit={text => {
+                if (text.trim() !== '') void act($, p.slug, 'add', text.trim())
+              }}
+            />
           </Box>
-        )}
+        </Box>
+        {problem !== '' && <Text color="error">{problem}</Text>}
         {p.unsaved > 0 && (
           <Text color="warning">
             {p.unsaved} chat{p.unsaved === 1 ? '' : 's'} ended without saving - run /threadback-save

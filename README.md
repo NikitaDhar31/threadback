@@ -73,7 +73,8 @@ claude plugin install threadback@threadback
 ```
 
 Or, to develop it, from a local clone: `claude plugin marketplace add <path-to-your-clone>`.
-The hooks need Python 3 (`py` on Windows, `python3` elsewhere) and `bash` (Git Bash on Windows).
+The hooks need Python 3.10+ (`py` on Windows, `python3` elsewhere) and `bash` (Git Bash on Windows).
+Without a usable Python, a new chat shows a message saying so, with where to get it.
 
 Claude Code runs an installed *copy* of the plugin. After changing the code, bump
 `version` in `.claude-plugin/plugin.json` (updates are skipped otherwise), then:
@@ -88,6 +89,10 @@ claude plugin update threadback@threadback
 `threadback-panel` is a second plugin in the same marketplace (`panel/`). It shows the
 current project's next step, where you left off, blockers and open tasks in a panel
 beside the chat, and refreshes after `/threadback-save`. `/threadback-panel` reopens it.
+Tasks can be edited right there, with no AI involved: tick one off (done ones fold under
+"Show done"), add one, move one to the top, make one the next step ("Do next", which puts
+the old next step back on the list), or remove one. The buttons run `tb task`, which
+also works on its own: `tb task add "text"`, `tb task done|undo|remove|top|next N`.
 
 ```bash
 claude plugin install threadback-panel@threadback
@@ -98,15 +103,46 @@ with mods (function hooks), which are early access and may change between releas
 Older versions reject it, which is why it is a separate plugin: `threadback` itself
 keeps working without it. Tests: `claude plugin test panel`.
 
-## Where data lives
+## Privacy: what ThreadBack reads, keeps and sends
 
-- `~/.threadback/projects/<slug>.json`: one hand-editable file per project.
-  Set `THREADBACK_HOME` to move it (e.g. into a synced folder).
-- Nothing is stored in this repository, so personal context never gets committed.
-- Secrets are masked as `[REDACTED]` before anything is saved or shown to Claude:
-  API keys (Anthropic, OpenAI, GitHub, AWS, Google, Slack, Stripe, ...), JWTs, private
-  keys, bearer tokens, passwords in URLs and `password=` / `api_key:` style values.
-  This is best effort: a random string with no known shape or label can slip through.
+**In short:** everything stays on your computer. ThreadBack has no server, no account,
+no analytics and makes no network requests. The only thing that leaves your machine is
+the short context it hands to Claude, which travels with your conversation like anything
+you type.
+
+**What it reads** (read-only, never changed):
+
+- **Your project folders:** git branch, recent commit messages and changed file names,
+  uncommitted file names, and the first lines of the README. It runs local `git`
+  commands only, never `git fetch` or anything that talks to a remote.
+- **Claude Code's own chat files** in `~/.claude/projects/<folder-name>/`, which Claude
+  Code already keeps on your disk: chat titles, dates, your messages and Claude's last
+  answer in each chat. Tool output and file contents inside those chats are skipped.
+- Nothing else: not your other files, not your browser, not any cloud account.
+
+**What it keeps**, all in `~/.threadback/` (set `THREADBACK_HOME` to move it, e.g. into
+a synced folder):
+
+- `projects/<slug>.json`: one plain, hand-editable file per project: summaries, next
+  step, tasks, decisions, and the auto-saved messages of chats that ended without a save.
+- `dashboard.html`, `hook-errors.log`, and `tb-path` (where the plugin is installed, for
+  the optional panel).
+- On Windows, only if you run `tb startup`: a login script and a desktop shortcut.
+
+Nothing is stored in this repository, so personal context never gets committed. To
+remove everything, uninstall the plugin and delete `~/.threadback`.
+
+**What it sends:** ThreadBack itself sends nothing. When a chat starts, and when you run
+`/threadback` or `/threadback-save`, it gives Claude that project's saved context (and,
+for a catch-up, a page-long digest of the folder). That text becomes part of your
+conversation, so Claude Code sends it to Anthropic with the rest of the chat, under the
+same terms as your own messages.
+
+**Secrets:** before anything is saved or handed to Claude, keys and passwords are
+masked as `[REDACTED]`: API keys (Anthropic, OpenAI, GitHub, AWS, Google, Slack,
+Stripe, ...), JWTs, private keys, bearer tokens, passwords in URLs and `password=` /
+`api_key:` style values. This is best effort: a random string with no known shape or
+label can slip through.
 
 ## What is detected automatically (read-only)
 
