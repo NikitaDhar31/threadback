@@ -8,6 +8,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from .redact import redact_obj
+
 STATUSES = ("active", "paused", "blocked", "done")
 
 
@@ -59,6 +61,7 @@ def path_for(slug: str) -> Path:
 
 
 def save(project: dict) -> Path:
+    project.update(redact_obj(project))  # never write a pasted key to disk
     project["updated"] = now()
     p = path_for(project["slug"])
     tmp = p.with_suffix(".json.tmp")

@@ -103,6 +103,10 @@ keeps working without it. Tests: `claude plugin test panel`.
 - `~/.threadback/projects/<slug>.json`: one hand-editable file per project.
   Set `THREADBACK_HOME` to move it (e.g. into a synced folder).
 - Nothing is stored in this repository, so personal context never gets committed.
+- Secrets are masked as `[REDACTED]` before anything is saved or shown to Claude:
+  API keys (Anthropic, OpenAI, GitHub, AWS, Google, Slack, Stripe, ...), JWTs, private
+  keys, bearer tokens, passwords in URLs and `password=` / `api_key:` style values.
+  This is best effort: a random string with no known shape or label can slip through.
 
 ## What is detected automatically (read-only)
 

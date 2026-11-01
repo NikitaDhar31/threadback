@@ -13,6 +13,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from .redact import redact
 from .sources import NO_WINDOW, _to_local, ago, claude_dir_for, claude_sessions
 
 MAX_CHARS = 6000
@@ -161,7 +162,7 @@ def build(folder: str, since: datetime | None = None, max_chars: int = MAX_CHARS
             out.append(f"  Claude's last answer: {_clip(c['last_answer'], 500)}")
     if len(out) == 1:
         out.append("No commits or Claude Code chats found" + (" since then." if since else "."))
-    text = "\n".join(out)
+    text = redact("\n".join(out))  # chats and commits often hold pasted keys
     return text if len(text) <= max_chars else text[: max_chars - 20] + "\n[...truncated]"
 
 

@@ -471,5 +471,74 @@ class DigestTests(TempHome):
         self.assertNotIn("Automatic digest", buf.getvalue())
 
 
+# Fake keys are built from pieces so the repo never holds a key-shaped string
+# (GitHub push protection would block it, and it would be a bad example).
+FAKE = {
+    "anthropic": "sk-ant-" + "api03-" + "A1b2" * 10,
+    "openai": "sk-" + "proj-" + "Z9y8" * 8,
+    "github": "ghp" + "_" + "Q" * 36,
+    "aws": "AK" + "IA" + "ABCDEFGHIJKLMNOP",
+    "google": "AI" + "za" + "x" * 35,
+    "slack": "xo" + "xb-" + "1234567890-abcdef",
+    "jwt": "ey" + "J" + "a" * 20 + ".ey" + "J" + "b" * 20 + "." + "c" * 20,
+}
+
+
+class RedactTests(TempHome):
+    def test_known_key_formats_are_masked(self):
+        from threadback.redact import MASK, redact
+        for name, key in FAKE.items():
+            with self.subTest(name):
+                out = redact(f"use this key {key} for now")
+                self.assertNotIn(key, out)
+                self.assertEqual(out, f"use this key {MASK} for now")
+
+    def test_labelled_secrets_keep_the_label(self):
+        from threadback.redact import redact
+        cases = {
+            "password=hunter2xyz": "password=[REDACTED]",
+            'DB_PASSWORD: "s3cr3t-pw"': "DB_PASSWORD: [REDACTED]",
+            "api_key = 12345abcdef": "api_key = [REDACTED]",
+            "Authorization: Bearer abcdefghijklmnop1234": "Authorization: Bearer [REDACTED]",
+            "postgres://admin:topsecret@db.local/app": "postgres://admin:[REDACTED]@db.local/app",
+            "https://x.com/cb?token=abcdef123456&x=1": "https://x.com/cb?token=[REDACTED]&x=1",
+        }
+        for text, want in cases.items():
+            with self.subTest(text):
+                self.assertEqual(redact(text), want)
+
+    def test_ordinary_text_is_left_alone(self):
+        from threadback.redact import redact
+        for text in ["Fixed the password reset flow", "max_tokens=4096", "author: Nikita",
+                     "Use OAuth for login", "Bumped version to 0.4.1", "secret sauce: none",
+                     "D:/AI Agents/Claude/ThreadBack", "Tokens: 1200 used"]:
+            with self.subTest(text):
+                self.assertEqual(redact(text), text)
+
+    def test_saved_context_never_holds_a_key(self):
+        key = FAKE["github"]
+        self.run_cli("new", "Vault App")
+        self.run_cli("save", "Vault App", "-s", f"Set token {key}", "-n", "Rotate the key",
+                     "-d", f"Use env vars | {key} was pasted in chat", "-t", f"remove {key}")
+        on_disk = store.path_for("vault-app").read_text(encoding="utf-8")
+        self.assertNotIn(key, on_disk)
+        self.assertIn("Set token [REDACTED]", on_disk)
+        self.assertNotIn(key, self.run_cli("show", "Vault App"))
+
+    def test_digest_never_shows_a_key(self):
+        from threadback import digest
+        folder = self.tmp / "keys app"
+        folder.mkdir()
+        key = FAKE["anthropic"]
+        (folder / "README.md").write_text(f"# Keys\n\nANTHROPIC_API_KEY={key}\n", encoding="utf-8")
+        g = lambda *a: subprocess.run(["git", "-C", str(folder), *a], check=True, capture_output=True)
+        g("init", "-q")
+        g("add", ".")
+        g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", f"Add key {key}")
+        text = digest.build(str(folder))
+        self.assertNotIn(key, text)
+        self.assertIn("Add key [REDACTED]", text)
+
+
 if __name__ == "__main__":
     unittest.main()
