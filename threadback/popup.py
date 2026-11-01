@@ -24,6 +24,11 @@ def summary() -> dict:
     return {"pick": pick, "others": others}
 
 
+def unsaved(p: dict) -> str:
+    n = len(p.get("auto_saves", []))
+    return f"  - {n} chat{'s' if n != 1 else ''} ended without saving" if n else ""
+
+
 def quick_save(slug: str, did: str, next_step: str) -> dict:
     """Save from the window: reload first so we never overwrite newer edits."""
     p = store.find(slug)
@@ -103,7 +108,7 @@ def show() -> None:
             label(body, f"Next: {p['next_action'] or 'no next step saved yet'}", 11, pad=(4, 0))
             if p["last_state"]:
                 label(body, f"Where you left off: {p['last_state']}", color="#555", pad=(2, 0))
-            label(body, f"Last activity {ago(ctx['last_activity'])}", 9, color=MUTED, pad=(2, 10))
+            label(body, f"Last activity {ago(ctx['last_activity'])}{unsaved(p)}", 9, color=MUTED, pad=(2, 10))
         else:
             label(body, "No recent activity found.", 12, True, pad=(0, 10))
 
@@ -113,7 +118,7 @@ def show() -> None:
                 row = tk.Frame(body)
                 row.pack(fill="x", pady=1)
                 hint = f"next: {p['next_action']}" if p["next_action"] else last_work(ctx) or "next: -"
-                text = f"{p['name']}  ({ago(ctx['last_activity'])})\n{hint}"
+                text = f"{p['name']}  ({ago(ctx['last_activity'])}){unsaved(p)}\n{hint}"
                 tk.Label(row, text=text, font=("Segoe UI", 9), fg=INK, justify="left", anchor="w",
                          wraplength=400).pack(side="left", fill="x", expand=True)
                 button(row, "Save", lambda p=p: save_dialog(p))

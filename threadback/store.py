@@ -74,6 +74,7 @@ def add_session(project: dict, summary: str = "", next_action: str = "") -> dict
         project["next_action"] = s["next"]
     if s["summary"] or s["next"]:
         project["sessions"].append(s)
+        project["auto_saves"] = []  # a real save covers the chats auto-captured before it
     return s
 
 

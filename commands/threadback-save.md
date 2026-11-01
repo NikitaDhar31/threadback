@@ -15,6 +15,8 @@ User's note (may be empty; if present, it wins for the next step): $ARGUMENTS
    ```
 
    If it says the folder isn't a project yet, that's fine: the save below registers it.
+   If it lists chats that ended without saving, include what they did in the summary
+   (they were auto-captured; this save replaces them).
 
    **Catch-up mode:** if this conversation has no real work in it yet (the user opened a chat
    just to save, or asks to catch up on an old project), don't draft from memory. Get a short,

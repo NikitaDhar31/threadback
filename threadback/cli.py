@@ -96,6 +96,11 @@ def brief(project: dict, ctx: dict) -> str:
     if p["sessions"]:
         s = p["sessions"][-1]
         out.append(f"\nLast saved session ({s['date']}):\n  {s.get('summary') or '-'}")
+    autos = p.get("auto_saves", [])
+    if autos:
+        out.append(f"\nChats that ended without saving ({len(autos)}, auto-captured):")
+        for a in autos[-3:]:
+            out.append(f"  - {a['date'][:16]}  last asked: {a['asked'][-1] if a['asked'] else '-'}")
     if p["blockers"]:
         out.append("\nBlockers:")
         out += [f"  {i}. {b['text']}" for i, b in enumerate(p["blockers"], 1)]

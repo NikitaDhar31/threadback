@@ -233,6 +233,44 @@ class PluginTests(TempHome):
             cli.main(["hook", event])
         return buf.getvalue()
 
+    def write_chat(self, folder, sid, messages):
+        """Transcript with (minutes_from_now, role, text) records, timestamps in UTC like Claude Code."""
+        from datetime import timezone
+        d = sources.claude_dir_for(str(folder))
+        d.mkdir(parents=True, exist_ok=True)
+        recs = []
+        for minutes, role, text in messages:
+            ts = (datetime.now(timezone.utc) + timedelta(minutes=minutes)).isoformat().replace("+00:00", "Z")
+            content = text if role == "user" else [{"type": "text", "text": text}]
+            recs.append({"type": role, "timestamp": ts, "message": {"content": content}})
+        (d / f"{sid}.jsonl").write_text("\n".join(map(json.dumps, recs)) + "\n", encoding="utf-8")
+
+    def test_chat_ending_without_save_is_auto_captured(self):
+        folder = self.make_project()
+        self.write_chat(folder, "s1", [(-5, "user", "fix the date picker"),
+                                       (-4, "assistant", "Fixed it in picker.ts")])
+        self.hook("session-end", {"session_id": "s1", "cwd": str(folder)})
+        p = store.find("proj")
+        self.assertEqual(p["next_action"], "add login page")  # the user's plan is untouched
+        self.assertEqual(p["auto_saves"][0]["asked"], ["fix the date picker"])
+        self.assertEqual(p["auto_saves"][0]["last_answer"], "Fixed it in picker.ts")
+        self.assertIn("ended without saving (1", self.run_cli("show", "proj"))
+        ctx = json.loads(self.hook("session-start", {"session_id": "s2", "cwd": str(folder)}))
+        self.assertIn("Last asked: fix the date picker", ctx["hookSpecificOutput"]["additionalContext"])
+        # A real save covers them.
+        self.run_cli("save", "proj", "-s", "fixed date picker")
+        self.assertEqual(store.find("proj")["auto_saves"], [])
+
+    def test_only_messages_after_the_last_save_are_captured(self):
+        folder = self.make_project()
+        self.run_cli("save", "proj", "-s", "did the first part")
+        self.write_chat(folder, "s1", [(-10, "user", "first part"), (-9, "assistant", "done")])
+        self.hook("session-end", {"session_id": "s1", "cwd": str(folder)})
+        self.assertEqual(store.find("proj").get("auto_saves", []), [])  # saved, nothing new
+        self.write_chat(folder, "s1", [(-10, "user", "first part"), (1, "user", "one more thing")])
+        self.hook("session-end", {"session_id": "s1", "cwd": str(folder)})
+        self.assertEqual(store.find("proj")["auto_saves"][0]["asked"], ["one more thing"])
+
     def test_find_by_folder_matches_subfolders_deepest_first(self):
         outer = self.make_project("Outer")
         inner = store.new_project("Inner", folder=str(outer / "src"))

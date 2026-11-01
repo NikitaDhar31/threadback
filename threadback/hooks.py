@@ -15,8 +15,10 @@ import os
 import sys
 import traceback
 
+from pathlib import Path
+
 from . import digest, store
-from .sources import ago, context
+from .sources import ago, claude_dir_for, context
 
 MAX_CONTEXT_CHARS = 3500
 DIGEST_CHARS = 1800
@@ -63,7 +65,29 @@ def session_end(payload: dict) -> None:
     if p is not None and payload.get("session_id"):
         store.record_claude_session(p, payload["session_id"], ended=True)
         store.save(p)
+        if auto_capture(p, payload):
+            store.save(p)
     return None
+
+
+def auto_capture(p: dict, payload: dict, keep: int = 10) -> bool:
+    """Chat ended without /threadback-save: keep a free trace of it (no AI). Only messages
+    after the last real save count, so a chat that was saved and then ended adds nothing.
+    Never touches the next step; the next real save clears these."""
+    sid = payload["session_id"]
+    path = Path(payload.get("transcript_path") or
+                claude_dir_for(payload.get("cwd") or p["folder"]) / f"{sid}.jsonl")
+    if not path.is_file():
+        return False
+    c = digest.chat(path, since=digest.last_saved(p))
+    if not c["asked"]:
+        return False
+    autos = [a for a in p.get("auto_saves", []) if a.get("session_id") != sid]  # resumed chat: replace
+    autos.append({"date": store.now(), "session_id": sid, "messages": len(c["asked"]),
+                  "asked": [digest._clip(m, 200) for m in c["asked"][-3:]],
+                  "last_answer": digest._clip(c["last_answer"], 400)})
+    p["auto_saves"] = autos[-keep:]
+    return True
 
 
 def catch_up_hint(p: dict) -> str:
@@ -97,6 +121,13 @@ def brief_for_claude(p: dict, ctx: dict) -> str:
     if summaries:
         lines.append("Recent sessions:")
         lines += [f"- {s['date'][:10]}: {s['summary']}" for s in summaries]
+    autos = p.get("auto_saves", [])[-3:]
+    if autos:
+        lines.append("Chats that ended without /threadback-save (auto-captured; newer than the saved context):")
+        for a in autos:
+            lines.append(f"- {a['date'][:16]}, {a['messages']} message(s). Last asked: "
+                         + " / ".join(a["asked"]) + (f" | Claude's last answer: {a['last_answer']}"
+                                                    if a["last_answer"] else ""))
     if ctx["git"] and ctx["git"]["uncommitted"]:
         lines.append(f"Git: {ctx['git']['uncommitted']} uncommitted change(s) on {ctx['git']['branch']}.")
     lines.append("Don't recite all of this unprompted; use it when relevant. If the user asks what they "

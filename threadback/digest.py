@@ -86,8 +86,9 @@ def _assistant_text(rec: dict) -> str:
                     if isinstance(c, dict) and c.get("type") == "text").strip()
 
 
-def chat(path: Path) -> dict:
-    """User messages and the last answer from one transcript (undocumented format: best effort)."""
+def chat(path: Path, since: datetime | None = None) -> dict:
+    """User messages and the last answer from one transcript (undocumented format: best effort).
+    With `since`, only messages after it (records without a timestamp are kept)."""
     asked, last_answer = [], ""
     with path.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -98,6 +99,10 @@ def chat(path: Path) -> dict:
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if since and rec.get("timestamp"):
+                when = _to_local(str(rec["timestamp"]).replace("Z", "+00:00"))
+                if when and when <= since:
+                    continue
             if rec.get("type") == "user":
                 text = _user_text(rec)
                 if text:

@@ -49,7 +49,9 @@ This repo is also a Claude Code plugin (`.claude-plugin/`, `hooks/`, `commands/`
 - **Session start:** in a registered project folder (or any subfolder), Claude is
   given that project's next step, open tasks, decisions and recent session
   summaries, and the session is recorded. Untracked folders get a one-line hint.
-- **Session end:** records when the session ended.
+- **Session end:** records when the session ended. If the chat ended without
+  `/threadback-save`, it keeps a free trace (your last messages and Claude's last answer,
+  no AI). It never changes your next step, and the next real save replaces it.
 - **`/threadback`:** shows where you left off.
 - **`/threadback-save [note]`:** Claude writes the summary, decisions and next step
   for you. In an untracked folder it registers the folder as a new project.
