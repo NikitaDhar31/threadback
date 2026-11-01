@@ -13,6 +13,7 @@ from . import dashboard, store
 from .sources import ago, context, last_work, suggest_resume
 
 INK, MUTED, ACCENT = "#1d2330", "#667085", "#3557d4"
+LIST_SCREEN_SHARE = 0.45  # "Other open projects" scrolls beyond this share of screen height
 
 
 def summary() -> dict:
@@ -56,6 +57,37 @@ def show() -> None:
 
     def button(parent, text, command, side="right"):
         tk.Button(parent, text=text, font=("Segoe UI", 9), padx=8, command=command).pack(side=side, padx=(6, 0))
+
+    def scroll_area(parent):
+        """A frame that scrolls once it is taller than LIST_SCREEN_SHARE of the screen,
+        so the Close/Save buttons stay visible however many projects there are."""
+        box = tk.Frame(parent)
+        box.pack(fill="both", expand=True)
+        canvas = tk.Canvas(box, highlightthickness=0, bd=0)
+        bar = tk.Scrollbar(box, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=bar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        inner = tk.Frame(canvas)
+        item = canvas.create_window((0, 0), window=inner, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(item, width=e.width))
+        inner.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+
+        def wheel(e):
+            if canvas.winfo_exists() and bar.winfo_ismapped():
+                step = -1 if (getattr(e, "delta", 0) > 0 or e.num == 4) else 1
+                canvas.yview_scroll(step, "units")
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):  # Windows/macOS, Linux
+            root.bind_all(seq, wheel)
+        inner.scroll = (canvas, bar)
+        return inner
+
+    def fit_scroll_area(inner) -> None:
+        canvas, bar = inner.scroll
+        inner.update_idletasks()
+        limit = int(root.winfo_screenheight() * LIST_SCREEN_SHARE)
+        canvas.configure(width=inner.winfo_reqwidth(), height=min(inner.winfo_reqheight(), limit))
+        if inner.winfo_reqheight() > limit:
+            bar.pack(side="right", fill="y")
 
     def save_dialog(p: dict) -> None:
         d = tk.Toplevel(root)
@@ -114,14 +146,16 @@ def show() -> None:
 
         if data["others"]:
             label(body, "Other open projects", 9, True, MUTED)
+            rows = scroll_area(body)
             for p, ctx in data["others"]:
-                row = tk.Frame(body)
+                row = tk.Frame(rows)
                 row.pack(fill="x", pady=1)
                 hint = f"next: {p['next_action']}" if p["next_action"] else last_work(ctx) or "next: -"
                 text = f"{p['name']}  ({ago(ctx['last_activity'])}){unsaved(p)}\n{hint}"
                 tk.Label(row, text=text, font=("Segoe UI", 9), fg=INK, justify="left", anchor="w",
                          wraplength=400).pack(side="left", fill="x", expand=True)
                 button(row, "Save", lambda p=p: save_dialog(p))
+            fit_scroll_area(rows)
 
         label(body, "Stopping work? Click Save and write what you did, your next step, or both.",
               9, color=MUTED, pad=(12, 0))
