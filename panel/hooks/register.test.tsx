@@ -66,6 +66,16 @@ test('shows the deepest matching project: next step, state, open tasks', async (
   }
 })
 
+test('a project with no open tasks shows no tasks section', async ($, on) => {
+  engine(on, 'D:\\work')
+  await $.session.start({ cwd: 'D:\\work', surface: 'desktop', isInteractive: true })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^Outer$/ }))?.text).toBe('Outer')
+  expect(await ui.find({ type: 'Text', text: /Open tasks/ })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('a folder ThreadBack does not track says how to start', async ($, on) => {
   engine(on, 'C:\\elsewhere')
   await $.session.start({ cwd: 'C:\\elsewhere', surface: 'desktop', isInteractive: true })

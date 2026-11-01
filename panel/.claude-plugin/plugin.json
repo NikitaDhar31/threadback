@@ -1,6 +1,6 @@
 {
   "name": "threadback-panel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Optional, experimental: a panel beside the chat showing this project's ThreadBack next step, where you left off and open tasks. Needs the threadback plugin and a Claude Code version with mods.",
   "author": {
     "name": "Nikita Dhar"

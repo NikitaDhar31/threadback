@@ -139,11 +139,12 @@ export const register: Register = on => {
             {p.blockers.map(b => <Text>- {b}</Text>)}
           </Box>
         )}
-        <Box flexDirection="column">
-          <Text bold>Open tasks ({p.tasks.length})</Text>
-          {p.tasks.length === 0 && <Text dimColor>None.</Text>}
-          {p.tasks.map(t => <Text>{t.n}. {t.text}</Text>)}
-        </Box>
+        {p.tasks.length > 0 && (
+          <Box flexDirection="column">
+            <Text bold>Open tasks ({p.tasks.length})</Text>
+            {p.tasks.map(t => <Text>{t.n}. {t.text}</Text>)}
+          </Box>
+        )}
         {p.unsaved > 0 && (
           <Text color="warning">
             {p.unsaved} chat{p.unsaved === 1 ? '' : 's'} ended without saving - run /threadback-save
