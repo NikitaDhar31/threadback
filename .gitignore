@@ -8,3 +8,6 @@ dist/
 .threadback/
 *.json.tmp
 config.json
+
+# Written by Claude Code when it loads the panel mod
+panel/.claude-plugin/types/

@@ -83,6 +83,21 @@ claude plugin marketplace update threadback
 claude plugin update threadback@threadback
 ```
 
+### Optional: the panel (experimental)
+
+`threadback-panel` is a second plugin in the same marketplace (`panel/`). It shows the
+current project's next step, where you left off, blockers and open tasks in a panel
+beside the chat, and refreshes after `/threadback-save`. `/threadback-panel` reopens it.
+
+```bash
+claude plugin install threadback-panel@threadback
+```
+
+It needs the `threadback` plugin (it reads `~/.threadback`) and a Claude Code version
+with mods (function hooks), which are early access and may change between releases.
+Older versions reject it, which is why it is a separate plugin: `threadback` itself
+keeps working without it. Tests: `claude plugin test panel`.
+
 ## Where data lives
 
 - `~/.threadback/projects/<slug>.json`: one hand-editable file per project.

@@ -9,6 +9,11 @@
       "name": "threadback",
       "source": "./",
       "description": "Resume where you left off across projects and Claude Code sessions."
+    },
+    {
+      "name": "threadback-panel",
+      "source": "./panel",
+      "description": "Optional, experimental: shows this project's next step and open tasks in a panel beside the chat."
     }
   ]
 }
