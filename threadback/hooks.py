@@ -161,7 +161,7 @@ def brief_for_claude(p: dict, ctx: dict) -> str:
     from . import digest
     from .sources import ago
 
-    lines = [f"ThreadBack context for project '{p['name']}' (saved in earlier sessions; "
+    lines = [f"ThreadBack context for project '{store.display_name(p['name'])}' (saved in earlier sessions; "
              f"may be out of date, so verify against the code before relying on it).",
              f"Status: {p['status']}. Last activity {ago(ctx['last_activity'])}."]
     if p["next_action"]:

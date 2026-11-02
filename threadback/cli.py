@@ -87,7 +87,7 @@ def brief(project: dict, ctx: dict) -> str:
     """Plain-text context-recovery brief for one project."""
     out = []
     p = project
-    out.append(f"== {p['name']}  [{p['status']}]  last activity {ago(ctx['last_activity'])}")
+    out.append(f"== {store.display_name(p['name'])}  [{p['status']}]  last activity {ago(ctx['last_activity'])}")
     if p["next_action"]:
         out.append(f"\nNEXT ACTION: {p['next_action']}")
     if p["last_state"]:
@@ -134,12 +134,13 @@ def brief(project: dict, ctx: dict) -> str:
         out.append("\nRecent Claude Code sessions in this folder:")
         out.append(fence("\n".join(f"  - {s['title'] or s['last_prompt'][:70] or '(untitled)'}  "
                                     f"({ago(s['last_active'])})" for s in ctx["claude"])))
-        out.append(f"    resume latest: cd {shlex.quote(p['folder'])} && "
-                   f"claude --resume {shlex.quote(ctx['claude'][0]['id'])}")
+        if not store.has_control_chars(p["folder"]):
+            out.append(f"    resume latest: cd {shlex.quote(p['folder'])} && "
+                       f"claude --resume {shlex.quote(ctx['claude'][0]['id'])}")
     if p["links"] or p["folder"]:
         out.append("\nLinks (threadback open <project> <label>):")
-        if p["folder"]:
-            out.append(f"  - folder: {p['folder']}")
+        if p["folder"]:  # the folder's name is not the user's text either: fenced as data
+            out.append(fence(f"  - folder: {p['folder']}"))
         out += [f"  - {l['label']}: {l['url']}" for l in p["links"]]
     return redact("\n".join(out))  # /threadback hands this to Claude: mask git and chat text too
 
@@ -174,11 +175,13 @@ def cmd_list(a) -> None:
         pcs = [pc for pc in pcs if pc[0]["status"] != "done"]
     pick = suggest_resume(pcs)
     if pick:
-        print(f"Resume: {pick[0]['name']} -> {pick[0]['next_action'] or '(no next action saved)'}\n")
-    w = max(len(p["name"]) for p, _ in pcs) if pcs else 10
+        print(f"Resume: {store.display_name(pick[0]['name'])} -> "
+              f"{pick[0]['next_action'] or '(no next action saved)'}\n")
+    # /threadback-all hands this list to Claude: names as display_name makes them.
+    w = max(len(store.display_name(p["name"])) for p, _ in pcs) if pcs else 10
     for p, ctx in pcs:
         slug = f"[{p['slug']}]  " if a.slugs else ""
-        print(f"  {slug}{p['name']:<{w}}  {p['status']:<8} {ago(ctx['last_activity']):<16} "
+        print(f"  {slug}{store.display_name(p['name']):<{w}}  {p['status']:<8} {ago(ctx['last_activity']):<16} "
               f"next: {p['next_action'] or '-'}")
 
 
@@ -389,6 +392,9 @@ def cmd_open(a) -> None:
     if what == "claude":
         if not p["folder"]:
             sys.exit("No folder set.")
+        if store.has_control_chars(p["folder"]):
+            sys.exit("This project's folder name has line breaks or control characters, so no "
+                     "command is shown for it. Open the folder yourself and start claude there.")
         ctx = context(p)
         # shlex.quote: a folder name can hold quotes or $( ), and the line is meant to be pasted.
         resume = f" --resume {shlex.quote(ctx['claude'][0]['id'])}" if ctx["claude"] else ""

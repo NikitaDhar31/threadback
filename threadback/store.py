@@ -23,7 +23,10 @@ def home() -> Path:
 
 def projects_dir() -> Path:
     d = home() / "projects"
-    d.mkdir(parents=True, exist_ok=True)
+    if not d.is_dir():
+        # Only the user can read what ThreadBack keeps (macOS/Linux; Windows ignores modes).
+        home().mkdir(mode=0o700, parents=True, exist_ok=True)
+        d.mkdir(mode=0o700, exist_ok=True)
     return d
 
 
@@ -123,7 +126,7 @@ def save(project: dict) -> Path:
     p = path_for(project["slug"])
     # A temp file of its own, so two writers never share one; replace() swaps it in whole.
     tmp = p.parent / f".{project['slug']}.{os.getpid()}.{time.monotonic_ns()}.tmp"
-    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)  # private to the user
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(json.dumps(project, indent=2, ensure_ascii=False))
@@ -196,14 +199,33 @@ def find_by_folder(path: str) -> dict | None:
     return best
 
 
+NAME_CHARS = 60
+
+
+def display_name(name: str) -> str:
+    """A project name as it may reach Claude: one short line of plain name characters.
+    Names often come from folder names, which anyone shipping a repo or archive chooses, and on
+    macOS/Linux can even hold line breaks; this keeps them from reading like instructions."""
+    name = re.sub(r"[\x00-\x1f\x7f-\x9f  ]+", " ", name)  # line breaks, control chars
+    name = re.sub(r"[^\w .,()&+#-]+", " ", name)  # letters (any script), digits, light punctuation
+    name = " ".join(name.split())[:NAME_CHARS].strip()
+    return name or "(unnamed)"
+
+
+def has_control_chars(text: str) -> bool:
+    """Line breaks or control characters: a path like that is not shown as a command."""
+    return bool(re.search(r"[\x00-\x1f\x7f-\x9f  ]", text))
+
+
 def register_folder(path: str) -> dict:
     """Create a project for a folder, named after it. Refuses drive roots and home."""
     folder = Path(path).resolve()
     if folder == Path.home().resolve() or folder.parent == folder:
         raise ValueError(f"Won't register {folder} as a project; open Claude Code in a project folder.")
-    name, n = folder.name, 2
+    base = display_name(folder.name)
+    name, n = base, 2
     while path_for(slugify(name)).exists():
-        name, n = f"{folder.name} {n}", n + 1
+        name, n = f"{base} {n}", n + 1
     p = new_project(name, folder=str(folder))
     save(p)
     return p

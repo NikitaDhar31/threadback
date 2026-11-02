@@ -54,15 +54,24 @@ def git_log(folder: str, since: datetime | None = None, limit: int = 10) -> list
 
 
 def readme(folder: str, lines: int = 20, chars: int = 1200) -> str:
+    try:
+        root = Path(folder).resolve()
+    except OSError:
+        return ""
     for name in ("README.md", "README.txt", "README", "readme.md"):
-        f = Path(folder) / name
-        if f.is_file():
-            try:
-                text = f.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                return ""
-            kept = [l.rstrip() for l in text.splitlines() if l.strip()][:lines]
-            return "\n".join(kept)[:chars]
+        try:
+            # A README that is a link to a file elsewhere (a repo can ship one pointing at
+            # ~/.ssh or a private note) is never read: only a real file inside the folder.
+            f = (root / name).resolve()
+            if not f.is_file() or not f.is_relative_to(root):
+                continue
+            with f.open("rb") as fh:
+                head = fh.read(chars * 8)  # the top is all that's shown; never load a huge file
+        except OSError:
+            continue
+        text = head.decode("utf-8", errors="replace")
+        kept = [l.rstrip() for l in text.splitlines() if l.strip()][:lines]
+        return "\n".join(kept)[:chars]
     return ""
 
 
