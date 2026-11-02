@@ -97,7 +97,9 @@ def load_all() -> list[dict]:
 
 
 def _norm(path: str) -> str:
-    return os.path.normcase(os.path.abspath(path)).rstrip("\\/")
+    # realpath: one folder can be spelled two ways, through a link (/var is /private/var on
+    # macOS) or a Windows short name (RUNNER~1), and both must match the saved folder.
+    return os.path.normcase(os.path.realpath(path)).rstrip("\\/")
 
 
 def find_by_folder(path: str) -> dict | None:

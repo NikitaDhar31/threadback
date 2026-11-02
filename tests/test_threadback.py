@@ -349,7 +349,7 @@ class StartupTests(TempHome):
     def test_install_and_remove(self):
         (self.tmp / "desktop").mkdir()
         script, shortcut = startup.install()
-        text = script.read_text(encoding="utf-8", newline="")
+        text = script.read_bytes().decode("utf-8")  # line endings exactly as written
         self.assertIn("-m threadback welcome", text)
         self.assertNotIn("\r\r\n", text)
         self.assertIn("THREADBACK_HOME", text)
