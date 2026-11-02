@@ -1,107 +1,105 @@
 # ThreadBack
 
-Personal work-context recovery for people juggling several AI-assisted projects.
-When you come back after days away, ThreadBack tells you **what you were doing, why,
-what's unfinished, and where the relevant conversation is**.
+**Pick up any project where you left off, with the next step you planned.**
 
-It is a resumption dashboard, not another coding assistant. Pure Python standard
-library, no database, no network calls, no credentials.
+ThreadBack is a Claude Code plugin for people who juggle several projects. When you
+come back to one after a few days, or after a weekend on something else, Claude already
+knows what you were doing, why, what's unfinished, and what you meant to do next. And
+when you're not sure which project to pick up, `/threadback-all` shows all of them with
+their next steps.
 
-## Quick start
+<!-- screenshot: a new chat opening in a project, Claude starting from the saved next step -->
+
+## How it works
+
+1. **Wrap up with `/threadback-save`.** Claude writes a short summary of the session:
+   where things stand, the decisions you made and why, unfinished tasks, and **one
+   concrete next step**. Add a note to set the next step yourself:
+   `/threadback-save next: write the login tests`.
+2. **Come back any time later.** When you open Claude Code in that folder (or any folder
+   inside it), Claude is given the saved context automatically. Ask "where was I?" or run
+   `/threadback` to see it.
+3. **Across projects:** `/threadback-all` lists every project, most recent first, with
+   its next step and a suggestion for which one to resume. Pick one and you get the
+   command that reopens your last Claude chat there.
+
+Forgot to save? If a chat ends without `/threadback-save`, ThreadBack keeps a free
+trace of it (your last messages and Claude's last answer, no AI) and shows it next
+time. It never overwrites the next step you planned.
+
+Already have old projects? Open a chat in the folder and run `/threadback-save`. With
+nothing to save from the chat itself, Claude catches up from a short, pre-filtered
+digest of the folder's commits and earlier Claude chats.
+
+<!-- screenshot: /threadback-all listing several projects with their next steps -->
+
+## How it differs from memory plugins
+
+Plugins like [claude-mem](https://github.com/thedotmack/claude-mem) record what Claude
+does inside one project and feed it back as memory. ThreadBack is about **you** and
+**all your projects**:
+
+- **Your plan, not Claude's log.** It keeps the next step you meant to take, your
+  decisions and why, and your open tasks, rather than a record of every tool call.
+- **Across projects.** It answers "which project should I pick up, and what's the next
+  step there?", not only "what happened in this one?".
+- **Light and local.** Plain JSON files in `~/.threadback`, no database, no background
+  service, no network calls. AI is only used when you run `/threadback-save`; session
+  start, auto-capture and the catch-up digest cost nothing.
+
+They don't conflict, so you can use both.
+
+## Requirements
+
+- [Claude Code](https://claude.com/claude-code) on Windows, macOS or Linux.
+- **Python 3.10 or newer**, available as `python3` (macOS/Linux) or `py` / `python`
+  (Windows). If Python is missing, new chats show a message saying so and where to get it.
+- **bash.** macOS and Linux have it. On Windows, Claude Code already uses Git Bash
+  ([Git for Windows](https://git-scm.com/downloads/win)).
+
+No other dependencies: ThreadBack uses only Python's standard library.
+
+## Install
+
+In a terminal (or with `/plugin` inside Claude Code):
 
 ```bash
-git clone https://github.com/NikitaDhar31/threadback.git
-cd threadback
-py -m threadback new "My Project" --folder "C:\path\to\my-project" --next "first thing to do"
-py -m threadback link "My Project" "ChatGPT: API design" https://chatgpt.com/c/...
-py -m threadback                      # list projects + which one to resume
-py -m threadback show "my project"    # full context brief
-py -m threadback save "my project"    # end-of-session prompts (Enter skips any)
-py -m threadback welcome              # welcome window with a Save button per project
-py -m threadback dashboard            # HTML dashboard in your browser
-py -m threadback startup install      # welcome window at Windows login + desktop icon
+claude plugin marketplace add NikitaDhar31/threadback
 ```
 
-Use `python3` instead of `py` outside Windows. Optional: `py -m pip install -e .` gives
-you a plain `threadback` command.
+```bash
+claude plugin install threadback@threadback
+```
 
-Project names match loosely (`show my` finds "My Project" if unambiguous).
+Then start a new Claude Code chat in a project folder and run `/threadback-save` at the
+end to start tracking it.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `new NAME [--folder P] [--next T] [--link "label \| url"]` | Create a project |
-| `list [--all]` (default) | Projects by last activity, with a "Resume:" pick |
-| `show NAME` | Next action, last state, blockers, open tasks, decisions + why, ideas, git, Claude Code sessions, links |
-| `save NAME` | Interactive session summary. Non-interactive flags: `-s` summary, `--state`, `-n` next, `-d "decision \| why"`, `-t` task, `--done N`, `-b` blocker, `--unblock N`, `-i` idea, `--status`, `--link` |
-| `digest [NAME] [--all] [--chats N]` | Short summary of the folder's commits, README and earlier Claude chats since the last save (`--all`: everything recent). Local and free, no AI |
-| `link NAME LABEL URL` | Add/replace a link (ChatGPT chat, Claude chat, GitHub repo...). `LABEL=folder` sets the folder |
-| `open NAME [LABEL\|folder\|claude]` | Open a link or the folder; `claude` prints the `claude --resume` command |
-| `edit NAME` | Open the project's JSON in `$EDITOR` / default app |
-| `dashboard [--no-open]` | Regenerate `~/.threadback/dashboard.html` |
-| `startup install\|remove\|status` | Manage the login script |
+| `/threadback-save [note]` | Saves this session: summary, where you left off, decisions, tasks, next step. In a new folder it starts tracking it as a project. |
+| `/threadback` | Shows where you left off in this project, next step first. |
+| `/threadback-all [project]` | Lists all your projects and their next steps, and helps you resume one. |
 
-## Claude Code plugin
+You don't need a command at the start of a chat: the context is handed to Claude
+automatically, and Claude only brings it up when it's relevant.
 
-This repo is also a Claude Code plugin (`.claude-plugin/`, `hooks/`, `commands/`).
+## Optional: the panel (experimental)
 
-- **Session start:** in a registered project folder (or any subfolder), Claude is
-  given that project's next step, open tasks, decisions and recent session
-  summaries, and the session is recorded. Untracked folders get a one-line hint.
-- **Session end:** records when the session ended. If the chat ended without
-  `/threadback-save`, it keeps a free trace (your last messages and Claude's last answer,
-  no AI). It never changes your next step, and the next real save replaces it.
-- **`/threadback`:** shows where you left off.
-- **`/threadback-save [note]`:** Claude writes the summary, decisions and next step
-  for you. In an untracked folder it registers the folder as a new project.
-- **Catching up old projects:** open a new chat in the folder and run `/threadback-save`.
-  With nothing to save from the chat itself, Claude reads `tb digest` (a page-sized,
-  pre-filtered summary of commits and earlier chats) rather than the raw transcripts,
-  so a catch-up costs about as much as a short chat. Until a project has a save, new
-  chats there also get a short digest at session start.
-
-Hooks use only the documented hook input (`session_id`, `cwd`), so they keep working
-if Claude Code changes its transcript format. Hook errors never block a session; they
-go to `~/.threadback/hook-errors.log`.
-
-Install from GitHub:
-
-```bash
-claude plugin marketplace add NikitaDhar31/threadback
-claude plugin install threadback@threadback
-```
-
-Or, to develop it, from a local clone: `claude plugin marketplace add <path-to-your-clone>`.
-The hooks need Python 3.10+ (`py` on Windows, `python3` elsewhere) and `bash` (Git Bash on Windows).
-Without a usable Python, a new chat shows a message saying so, with where to get it.
-
-Claude Code runs an installed *copy* of the plugin. After changing the code, bump
-`version` in `.claude-plugin/plugin.json` (updates are skipped otherwise), then:
-
-```bash
-claude plugin marketplace update threadback
-claude plugin update threadback@threadback
-```
-
-### Optional: the panel (experimental)
-
-`threadback-panel` is a second plugin in the same marketplace (`panel/`). It shows the
-current project's next step, where you left off, blockers and open tasks in a panel
-beside the chat, and refreshes after `/threadback-save`. `/threadback-panel` reopens it.
-Tasks can be edited right there, with no AI involved: tick one off (done ones fold under
-"Show done"), add one, move one to the top, make one the next step ("Do next", which puts
-the old next step back on the list), or remove one. The buttons run `tb task`, which
-also works on its own: `tb task add "text"`, `tb task done|undo|remove|top|next N`.
+`threadback-panel` is a second plugin that shows the current project's next step, where
+you left off and your open tasks in a panel beside the chat. You can tick tasks off, add
+them, reorder them and choose the next step there, with no AI involved.
 
 ```bash
 claude plugin install threadback-panel@threadback
 ```
 
-It needs the `threadback` plugin (it reads `~/.threadback`) and a Claude Code version
-with mods (function hooks), which are early access and may change between releases.
-Older versions reject it, which is why it is a separate plugin: `threadback` itself
-keeps working without it. Tests: `claude plugin test panel`.
+It needs the `threadback` plugin and a Claude Code version with mods, which are early
+access and may change between releases. That's why it's a separate plugin: ThreadBack
+itself works without it.
+
+<!-- screenshot: the panel beside a chat -->
 
 ## Privacy: what ThreadBack reads, keeps and sends
 
@@ -127,14 +125,14 @@ a synced folder):
   step, tasks, decisions, and the auto-saved messages of chats that ended without a save.
 - `dashboard.html`, `hook-errors.log`, and `tb-path` (where the plugin is installed, for
   the optional panel).
-- On Windows, only if you run `tb startup`: a login script and a desktop shortcut.
+- On Windows, only if you turn on the welcome window: a login script and a desktop shortcut.
 
 Nothing is stored in this repository, so personal context never gets committed. To
 remove everything, uninstall the plugin and delete `~/.threadback`.
 
 **What it sends:** ThreadBack itself sends nothing. When a chat starts, and when you run
-`/threadback` or `/threadback-save`, it gives Claude that project's saved context (and,
-for a catch-up, a page-long digest of the folder). That text becomes part of your
+`/threadback`, `/threadback-all` or `/threadback-save`, it gives Claude the saved context
+(and, for a catch-up, a page-long digest of the folder). That text becomes part of your
 conversation, so Claude Code sends it to Anthropic with the rest of the chat, under the
 same terms as your own messages.
 
@@ -144,38 +142,57 @@ Stripe, ...), JWTs, private keys, bearer tokens, passwords in URLs and `password
 `api_key:` style values. This is best effort: a random string with no known shape or
 label can slip through.
 
-## What is detected automatically (read-only)
+## Command line
 
-- **Git** (if the folder is a repo): branch, last commit, uncommitted changes.
-- **Claude Code sessions**: Claude Code keeps transcripts locally under
-  `~/.claude/projects/<folder-name>/`. ThreadBack reads the session title and last
-  prompt, and gives you the exact `claude --resume <id>` command. This format is
-  undocumented, so parsing is defensive. If it changes, that section just disappears.
-- **ChatGPT / claude.ai chats**: no supported local source, so you paste conversation
-  links with `link` or `save --link`. (ChatGPT's *Settings → Data controls → Export*
-  zip could be imported later; it's not in the MVP.)
+Everything also works from a terminal, without Claude. From a clone of this repo
+(use `python3` instead of `py` outside Windows):
 
-"Last activity" is the most recent of: saved session, git commit, Claude Code
-session. Editing a project's file (`new`, `link`) does not count as activity.
+```bash
+py -m threadback                      # all projects, and which one to resume
+py -m threadback show "my project"    # full brief for one project
+py -m threadback save "my project"    # save a session by answering a few prompts
+py -m threadback task add "write tests"
+py -m threadback link "my project" "ChatGPT: API design" https://chatgpt.com/c/...
+py -m threadback dashboard            # HTML overview in your browser
+```
 
-## Startup (Windows)
+Project names match loosely (`show my` finds "My Project" if that's unambiguous). Run
+`py -m threadback --help` for every command and option, including `digest`, `open`
+and `edit`. ChatGPT and claude.ai chats have no local files to read, so you add links to
+them yourself with `link`.
 
-`startup install` writes `ThreadBack.cmd` into your per-user Startup folder
-(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`) and puts a ThreadBack
-icon on your desktop. Both open the welcome window: the project to resume, its next
-step, and a **Save** button per project. No admin rights and no registry changes;
-`startup remove` deletes both. If you move this folder, run `install` again.
+### Windows extra: welcome window
 
-## Tests
+On Windows, `py -m threadback startup install` opens a small welcome window when you
+log in, and puts a ThreadBack icon on your desktop. It shows the project to resume, its
+next step, and a **Save** button for each project. It needs no admin rights and makes no
+registry changes; `startup remove` deletes both. It's optional and Windows only.
+
+## Development
 
 ```bash
 py -m unittest discover -s tests -t .
 ```
 
-## Possible next steps
+GitHub Actions runs the tests on Windows, macOS and Linux for every push. The panel's
+tests run with `claude plugin test panel`.
 
-- Import ChatGPT's official data export to auto-link conversations by project.
-- Optional AI-generated resumption brief from the saved context.
+To try your changes in Claude Code, add your clone as a marketplace:
+`claude plugin marketplace add <path-to-your-clone>`. Claude Code runs an installed
+*copy* of the plugin, so after changing the code, bump `version` in
+`.claude-plugin/plugin.json` (updates are skipped otherwise), then:
+
+```bash
+claude plugin marketplace update threadback
+```
+
+```bash
+claude plugin update threadback@threadback
+```
+
+Hooks use only the documented hook input (`session_id`, `cwd`), and Claude Code's chat
+files are read defensively, so a format change hides a section rather than breaking a
+session. Hook errors never block a session; they go to `~/.threadback/hook-errors.log`.
 
 ## License
 
