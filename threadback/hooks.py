@@ -4,6 +4,9 @@ Claude Code runs `threadback hook <event>` and passes JSON on stdin with
 `session_id` and `cwd`. On session start we record the session and hand Claude
 the project's saved context; on session end we record when it finished.
 
+Session end gets a 1.5 s budget in all (plugin hooks can't raise it), so it only notes the
+transcript; capture_pending() reads it the next time the project is opened or shown.
+
 A hook must never break a Claude session: every error is logged to
 ~/.threadback/hook-errors.log and the hook still exits 0.
 """
@@ -13,12 +16,14 @@ from __future__ import annotations
 import json
 import os
 import sys
-import traceback
 
 from pathlib import Path
 
-from . import digest, store
-from .sources import ago, claude_dir_for, context
+from . import store
+from .redact import redact
+
+# digest, sources (git, chat files) and traceback load only where used: session end
+# has 1.5 s in all, Python's own start included.
 
 MAX_CONTEXT_CHARS = 6000
 DIGEST_CHARS = 1800
@@ -29,11 +34,14 @@ def run(event: str) -> None:
     try:
         raw = sys.stdin.read()
         payload = json.loads(raw) if raw.strip() else {}
-        out = session_start(payload) if event == "session-start" else session_end(payload)
+        with store.lock(timeout=1.0 if event == "session-end" else 5.0):
+            out = session_start(payload) if event == "session-start" else session_end(payload)
         if out:
             print(json.dumps(out, ensure_ascii=False))
     except Exception:
         try:
+            import traceback
+
             log = store.home() / "hook-errors.log"
             log.parent.mkdir(parents=True, exist_ok=True)
             with log.open("a", encoding="utf-8") as f:
@@ -68,7 +76,10 @@ def session_start(payload: dict) -> dict:
     else:
         if payload.get("session_id"):
             store.record_claude_session(p, payload["session_id"])
+        if capture_pending(p) or payload.get("session_id"):
             store.save(p)
+        from .sources import context
+
         text = brief_for_claude(p, context(p))
         if not p["sessions"] and not p["next_action"]:
             text += catch_up_hint(p)
@@ -79,16 +90,36 @@ def session_end(payload: dict) -> None:
     p = _project_for(payload)
     if p is not None and payload.get("session_id"):
         store.record_claude_session(p, payload["session_id"], ended=True)
+        pending = [c for c in p.get("pending_captures", []) if c["session_id"] != payload["session_id"]]
+        pending.append({"session_id": payload["session_id"], "cwd": payload.get("cwd") or "",
+                        "transcript_path": payload.get("transcript_path") or ""})
+        p["pending_captures"] = pending[-10:]
         store.save(p)
-        if auto_capture(p, payload):
-            store.save(p)
     return None
+
+
+def capture_pending(p: dict) -> bool:
+    """Turn the chats that ended since the project was last opened into auto-saves.
+    Caller holds store.lock() and saves when this returns True."""
+    pending = p.get("pending_captures") or []
+    if not pending:
+        return False
+    for c in pending:
+        try:
+            auto_capture(p, c)
+        except (OSError, ValueError):
+            pass  # an unreadable transcript just isn't captured
+    p["pending_captures"] = []
+    return True
 
 
 def auto_capture(p: dict, payload: dict, keep: int = 10) -> bool:
     """Chat ended without /threadback-save: keep a free trace of it (no AI). Only messages
     after the last real save count, so a chat that was saved and then ended adds nothing.
     Never touches the next step; the next real save clears these."""
+    from . import digest
+    from .sources import claude_dir_for
+
     sid = payload["session_id"]
     path = Path(payload.get("transcript_path") or
                 claude_dir_for(payload.get("cwd") or p["folder"]) / f"{sid}.jsonl")
@@ -107,6 +138,8 @@ def auto_capture(p: dict, payload: dict, keep: int = 10) -> bool:
 
 def catch_up_hint(p: dict) -> str:
     """Nothing saved yet: hand Claude a short digest so it still knows what happened here."""
+    from . import digest
+
     d = digest.build(p["folder"], max_chars=DIGEST_CHARS, n_chats=2, messages=4) if p["folder"] else ""
     return ("\nNothing has been saved for this project yet. Automatic digest of the folder "
             "(commits and earlier Claude chats, may be partial):\n" + d +
@@ -116,6 +149,9 @@ def catch_up_hint(p: dict) -> str:
 
 def brief_for_claude(p: dict, ctx: dict) -> str:
     """Compact project context for Claude. Saved by the user earlier, so it may be stale."""
+    from . import digest
+    from .sources import ago
+
     lines = [f"ThreadBack context for project '{p['name']}' (saved in earlier sessions; "
              f"may be out of date, so verify against the code before relying on it).",
              f"Status: {p['status']}. Last activity {ago(ctx['last_activity'])}."]
@@ -150,5 +186,5 @@ def brief_for_claude(p: dict, ctx: dict) -> str:
         lines.append(f"Git: {ctx['git']['uncommitted']} uncommitted change(s) on {ctx['git']['branch']}.")
     lines.append("Don't recite all of this unprompted; use it when relevant. If the user asks what they "
                  "were doing, lead with the next step. When they wrap up, suggest /threadback-save.")
-    text = "\n".join(lines)
+    text = redact("\n".join(lines))  # saved fields are masked already; git and chat text too now
     return text if len(text) <= MAX_CONTEXT_CHARS else text[:MAX_CONTEXT_CHARS - 20] + "\n[...truncated]"

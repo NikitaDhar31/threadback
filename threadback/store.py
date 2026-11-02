@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -60,14 +62,85 @@ def path_for(slug: str) -> Path:
     return projects_dir() / f"{slug}.json"
 
 
+_held = 0  # lock() is re-entrant within one process
+
+
+@contextmanager
+def lock(timeout: float = 5.0):
+    """One writer at a time across processes: the hooks, the panel's buttons and saves can
+    run together, and each must read the latest file before changing it. Writers take this
+    around their whole read-change-save. A lock left by a crashed process goes stale after
+    30 s; past `timeout` the caller goes ahead rather than hang a session."""
+    global _held
+    if _held:
+        _held += 1
+        try:
+            yield
+        finally:
+            _held -= 1
+        return
+    path = home() / ".lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    fd = None
+    while fd is None:
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                if time.time() - path.stat().st_mtime > 30:
+                    path.unlink()
+                    continue
+            except OSError:
+                continue  # released meanwhile
+            if time.monotonic() > deadline:
+                break
+            time.sleep(0.03)
+        except OSError:
+            break  # can't lock (read-only folder?): go ahead unlocked
+    _held += 1
+    try:
+        yield
+    finally:
+        _held -= 1
+        if fd is not None:
+            os.close(fd)
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
 def save(project: dict) -> Path:
     project.update(redact_obj(project))  # never write a pasted key to disk
     project["updated"] = now()
     p = path_for(project["slug"])
-    tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(project, indent=2, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(p)
+    # A temp file of its own, so two writers never share one; replace() swaps it in whole.
+    tmp = p.parent / f".{project['slug']}.{os.getpid()}.{time.monotonic_ns()}.tmp"
+    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(project, indent=2, ensure_ascii=False))
+        for attempt in range(20):
+            try:
+                os.replace(tmp, p)
+                break
+            except PermissionError:  # Windows: a reader has the file open for a moment
+                if attempt == 19:
+                    raise
+                time.sleep(0.05)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     return p
+
+
+def reload(project: dict) -> dict:
+    """The project as it is on disk now; take it inside lock() before changing it."""
+    return next(p for p in load_all() if p["slug"] == project["slug"])
 
 
 def add_session(project: dict, summary: str = "", next_action: str = "") -> dict:

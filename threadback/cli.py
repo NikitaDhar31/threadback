@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import shlex
 import subprocess
 import sys
 import webbrowser
@@ -11,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import dashboard, digest, hooks, startup, store
+from .redact import redact
 from .sources import ago, context, last_work, suggest_resume
 
 
@@ -137,12 +140,17 @@ def brief(project: dict, ctx: dict) -> str:
         if p["folder"]:
             out.append(f"  - folder: {p['folder']}")
         out += [f"  - {l['label']}: {l['url']}" for l in p["links"]]
-    return "\n".join(out)
+    return redact("\n".join(out))  # /threadback hands this to Claude: mask git and chat text too
 
 
 # ---------------------------------------------------------------- commands
 
 def cmd_new(a) -> None:
+    with store.lock():
+        _new(a)
+
+
+def _new(a) -> None:
     if store.path_for(store.slugify(a.name)).exists():
         sys.exit(f"Project '{a.name}' already exists.")
     p = store.new_project(a.name, folder=str(Path(a.folder).resolve()) if a.folder else None)
@@ -168,16 +176,58 @@ def cmd_list(a) -> None:
         print(f"Resume: {pick[0]['name']} -> {pick[0]['next_action'] or '(no next action saved)'}\n")
     w = max(len(p["name"]) for p, _ in pcs) if pcs else 10
     for p, ctx in pcs:
-        print(f"  {p['name']:<{w}}  {p['status']:<8} {ago(ctx['last_activity']):<16} "
+        slug = f"[{p['slug']}]  " if a.slugs else ""
+        print(f"  {slug}{p['name']:<{w}}  {p['status']:<8} {ago(ctx['last_activity']):<16} "
               f"next: {p['next_action'] or '-'}")
 
 
 def cmd_show(a) -> None:
-    p = resolve(a.name)
+    with store.lock():
+        p = resolve(a.name)
+        if hooks.capture_pending(p):  # chats that ended since the project was last opened
+            store.save(p)
     print(brief(p, context(p)))
 
 
+# --json keys -> save options. Lists may hold "text | why" strings or {"text", "why"} objects.
+_JSON_KEYS = {"summary": "summary", "state": "state", "next": "next", "status": "status",
+              "decisions": "decision", "tasks": "task", "done": "done", "blockers": "blocker",
+              "unblock": "unblock", "ideas": "idea", "links": "link"}
+
+
+def _read_json_save(a) -> None:
+    """Fill the save options from JSON on stdin. Slash commands pass text written from the
+    chat this way, through a quoted heredoc, so nothing in it can reach a shell."""
+    try:
+        data = json.loads(sys.stdin.read() or "{}")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"--json: stdin is not valid JSON ({e})")
+    if not isinstance(data, dict):
+        raise ValueError("--json: stdin must hold one JSON object")
+    unknown = sorted(set(data) - set(_JSON_KEYS))
+    if unknown:
+        raise ValueError(f"--json: unknown keys {', '.join(unknown)}")
+    for key, attr in _JSON_KEYS.items():
+        if key not in data or data[key] in (None, "", []):
+            continue
+        value = data[key]
+        if attr in ("summary", "state", "next", "status"):
+            setattr(a, attr, str(value))
+            continue
+        items = value if isinstance(value, list) else [value]
+        if attr in ("done", "unblock"):
+            setattr(a, attr, [int(n) for n in items])
+            continue
+        pair_key = "url" if attr == "link" else "why"
+        setattr(a, attr, [f"{i.get('text') or i.get('label', '')} | {i.get(pair_key, '')}"
+                          if isinstance(i, dict) else str(i) for i in items])
+    if a.status and a.status not in store.STATUSES:
+        raise ValueError(f"--json: status must be one of {', '.join(store.STATUSES)}")
+
+
 def cmd_save(a) -> None:
+    if a.json:
+        _read_json_save(a)
     p = resolve(a.name, register=True)
     flags = any([a.summary, a.state, a.next, a.decision, a.task, a.done, a.blocker,
                  a.unblock, a.idea, a.status, a.link])
@@ -185,6 +235,11 @@ def cmd_save(a) -> None:
         if not sys.stdin.isatty():
             sys.exit("Nothing to save. Pass flags (see --help) or run in a terminal for prompts.")
         _interactive_save(p, a)
+    with store.lock():
+        _apply_save(store.reload(p), a)
+
+
+def _apply_save(p: dict, a) -> None:
     s = store.add_session(p, a.summary or "", a.next or "")
 
     if a.state:
@@ -219,7 +274,11 @@ def cmd_save(a) -> None:
 
 def cmd_task(a) -> None:
     """One task edit, as the panel's buttons make them. N is the number in the full list."""
-    p = resolve(a.project)
+    with store.lock():
+        _task(resolve(a.project), a)
+
+
+def _task(p: dict, a) -> None:
     tasks = p["tasks"]
     if a.action == "add":
         if not a.arg.strip():
@@ -283,7 +342,11 @@ def cmd_digest(a) -> None:
 
 
 def cmd_link(a) -> None:
-    p = store.find(a.name)
+    with store.lock():
+        _link(store.find(a.name), a)
+
+
+def _link(p: dict, a) -> None:
     if a.label.lower() == "folder":
         p["folder"] = str(Path(a.url).resolve())
     else:
@@ -308,10 +371,12 @@ def cmd_open(a) -> None:
         _open_target(p["folder"])
         return
     if what == "claude":
+        if not p["folder"]:
+            sys.exit("No folder set.")
         ctx = context(p)
-        if not ctx["claude"]:
-            sys.exit("No Claude Code sessions found for this project's folder.")
-        print(f"cd \"{p['folder']}\" && claude --resume {ctx['claude'][0]['id']}")
+        # shlex.quote: a folder name can hold quotes or $( ), and the line is meant to be pasted.
+        resume = f" --resume {shlex.quote(ctx['claude'][0]['id'])}" if ctx["claude"] else ""
+        print(f"cd {shlex.quote(p['folder'])} && claude{resume}")
         return
     hits = [l for l in p["links"] if what in l["label"].lower()]
     if not hits:
@@ -371,6 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("list", help="all projects, most recent first (default command)")
     s.add_argument("--all", action="store_true", help="include done projects")
+    s.add_argument("--slugs", action="store_true", help="show each project's slug (a-z, 0-9, -)")
     s.set_defaults(fn=cmd_list)
 
     s = sub.add_parser("show", help="full context-recovery brief (default: project for this folder)")
@@ -391,6 +457,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--idea", "-i", action="append", help="idea not yet implemented")
     s.add_argument("--status", choices=store.STATUSES)
     s.add_argument("--link", action="append", help="'label | url' of a conversation used")
+    s.add_argument("--json", action="store_true",
+                   help="read the values as one JSON object on stdin (keys: summary, state, next, "
+                        "status, decisions, tasks, done, blockers, unblock, ideas, links)")
     s.set_defaults(fn=cmd_save)
 
     s = sub.add_parser("task", help="edit one task: add TEXT, or done/undo/remove/top/next N "

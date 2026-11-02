@@ -2,6 +2,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -250,11 +251,16 @@ class PluginTests(TempHome):
         self.write_chat(folder, "s1", [(-5, "user", "fix the date picker"),
                                        (-4, "assistant", "Fixed it in picker.ts")])
         self.hook("session-end", {"session_id": "s1", "cwd": str(folder)})
+        # Session end only notes the chat (it has 1.5 s); opening the project captures it.
+        p = store.find("proj")
+        self.assertEqual(p.get("auto_saves", []), [])
+        self.assertEqual([c["session_id"] for c in p["pending_captures"]], ["s1"])
+        self.assertIn("ended without saving (1", self.run_cli("show", "proj"))
         p = store.find("proj")
         self.assertEqual(p["next_action"], "add login page")  # the user's plan is untouched
         self.assertEqual(p["auto_saves"][0]["asked"], ["fix the date picker"])
         self.assertEqual(p["auto_saves"][0]["last_answer"], "Fixed it in picker.ts")
-        self.assertIn("ended without saving (1", self.run_cli("show", "proj"))
+        self.assertEqual(p["pending_captures"], [])
         ctx = json.loads(self.hook("session-start", {"session_id": "s2", "cwd": str(folder)}))
         self.assertIn("Last asked: fix the date picker", ctx["hookSpecificOutput"]["additionalContext"])
         # A real save covers them.
@@ -278,9 +284,11 @@ class PluginTests(TempHome):
         self.run_cli("save", "proj", "-s", "did the first part")
         self.write_chat(folder, "s1", [(-10, "user", "first part"), (-9, "assistant", "done")])
         self.hook("session-end", {"session_id": "s1", "cwd": str(folder)})
+        self.hook("session-start", {"session_id": "s2", "cwd": str(folder)})  # captures it
         self.assertEqual(store.find("proj").get("auto_saves", []), [])  # saved, nothing new
         self.write_chat(folder, "s1", [(-10, "user", "first part"), (1, "user", "one more thing")])
         self.hook("session-end", {"session_id": "s1", "cwd": str(folder)})
+        self.hook("session-start", {"session_id": "s3", "cwd": str(folder)})
         self.assertEqual(store.find("proj")["auto_saves"][0]["asked"], ["one more thing"])
 
     def test_find_by_folder_matches_subfolders_deepest_first(self):
@@ -552,6 +560,31 @@ class RedactTests(TempHome):
         self.assertNotIn(key, text)
         self.assertIn("Add key [REDACTED]", text)
 
+    def test_branch_and_commit_are_masked_in_what_claude_gets(self):
+        from threadback import hooks
+        folder = self.tmp / "branchy"
+        folder.mkdir()
+        key = FAKE["github"]
+        g = lambda *a: subprocess.run(["git", "-C", str(folder), *a], check=True, capture_output=True)
+        g("init", "-q")
+        g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", f"token {key}")
+        g("checkout", "-q", "-b", f"fix-{key}")
+        (folder / "x.txt").write_text("dirty")  # uncommitted, so the branch line is shown
+        p = store.new_project("Branchy", folder=str(folder))
+        p["next_action"] = "go"
+        store.save(p)
+        out = json.loads(self.run_hook(hooks, str(folder)))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("uncommitted change", out)
+        self.assertNotIn(key, out)
+        self.assertNotIn(key, self.run_cli("show", "branchy"))
+
+    def run_hook(self, hooks, cwd):
+        buf = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(json.dumps({"session_id": "s", "cwd": cwd}))), \
+                redirect_stdout(buf):
+            hooks.run("session-start")
+        return buf.getvalue()
+
 
 class NoPythonTests(unittest.TestCase):
     """scripts/tb with no usable Python on PATH: say so instead of failing silently."""
@@ -635,3 +668,72 @@ class TaskEditTests(TempHome):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SafeCommandTests(TempHome):
+    """What the slash commands run: chat text and project folders never become shell syntax."""
+
+    def setUp(self):
+        super().setUp()
+        self.run_cli("new", "Shop")
+
+    def save_json(self, data):
+        with mock.patch("sys.stdin", io.StringIO(json.dumps(data))):
+            return self.run_cli("save", "Shop", "--json")
+
+    def test_save_json_keeps_shell_characters_as_text(self):
+        risky = 'Fix "quotes", $(rm -rf ~) and `whoami`'
+        self.save_json({"summary": risky, "next": "Ship $HOME v1",
+                        "decisions": [{"text": "Use SQLite", "why": "no server"}, "Keep JSON | readable"],
+                        "tasks": ["A", "B"], "ideas": ["dark mode"], "status": "active"})
+        p = store.find("Shop")
+        self.assertEqual(p["sessions"][-1]["summary"], risky)
+        self.assertEqual(p["next_action"], "Ship $HOME v1")
+        self.assertEqual([(d["text"], d["why"]) for d in p["decisions"]],
+                         [("Use SQLite", "no server"), ("Keep JSON", "readable")])
+        self.save_json({"done": [2], "tasks": ["C"]})
+        self.assertEqual([(t["text"], t["done"]) for t in store.find("Shop")["tasks"]],
+                         [("A", False), ("B", True), ("C", False)])
+
+    def test_save_json_rejects_bad_input(self):
+        for bad in ('not json', '["a list"]', '{"sumary": "typo"}', '{"status": "bogus"}'):
+            with self.subTest(bad), mock.patch("sys.stdin", io.StringIO(bad)), \
+                    self.assertRaises(SystemExit):
+                self.run_cli("save", "Shop", "--json")
+
+    def test_list_slugs_and_safely_quoted_resume_command(self):
+        import shlex
+        folder = self.tmp / "it's $(whoami) app"
+        folder.mkdir()
+        self.run_cli("link", "Shop", "folder", str(folder))
+        self.assertIn("[shop]", self.run_cli("list", "--slugs"))
+        self.assertNotIn("[shop]", self.run_cli("list"))
+        line = self.run_cli("open", "shop", "claude").strip()
+        self.assertEqual(shlex.split(line), ["cd", str(folder.resolve()), "&&", "claude"])
+
+
+class LockTests(TempHome):
+    def test_parallel_task_edits_lose_nothing(self):
+        """The panel's buttons and the hooks can write at the same moment: every edit must land."""
+        self.run_cli("new", "Shop")
+        tb = Path(__file__).resolve().parent.parent / "scripts" / "tb.py"
+        procs = [subprocess.Popen([sys.executable, str(tb), "task", "add", f"task {n}", "-p", "shop"],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                 for n in range(12)]
+        errors = [p.communicate(timeout=60)[1] for p in procs]
+        self.assertEqual([p.returncode for p in procs], [0] * 12, errors)
+        texts = sorted(t["text"] for t in store.find("shop")["tasks"])
+        self.assertEqual(texts, sorted(f"task {n}" for n in range(12)))
+        leftovers = [f.name for f in store.projects_dir().iterdir() if f.suffix == ".tmp"]
+        self.assertEqual(leftovers, [])
+        self.assertFalse((store.home() / ".lock").exists())
+
+    def test_stale_lock_is_taken_over(self):
+        lock = store.home() / ".lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.write_text("")
+        old = datetime.now().timestamp() - 60
+        os.utime(lock, (old, old))
+        with store.lock(timeout=1):
+            pass
+        self.assertFalse(lock.exists())

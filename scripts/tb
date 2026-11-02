@@ -7,11 +7,17 @@ export MSYS2_ARG_CONV_EXCL="*"
 
 # Run each candidate rather than trusting `command -v`: Windows ships a "python"
 # that only opens the Microsoft Store, and an old Python 2 or 3.9 may be first on PATH.
-works='import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'
+# tb.py checks the version itself and exits 86 when it's too old, so a working Python
+# starts once (session end has 1.5 s in all). The other codes mean "this one doesn't run":
+# 103 py found no Python 3, 9009 the Store stub, 126/127 not runnable or not found.
 for python in "py -3" python3 python; do
-  if $python -c "$works" >/dev/null 2>&1; then
-    exec $python "$here/tb.py" "$@"
-  fi
+  command -v "${python%% *}" >/dev/null 2>&1 || continue
+  $python "$here/tb.py" "$@"
+  status=$?
+  case $status in
+    86|103|126|127|9009) ;;
+    *) exit $status ;;
+  esac
 done
 
 # No usable Python. Hook output is otherwise dropped, so say it where it is seen:

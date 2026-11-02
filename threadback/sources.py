@@ -17,6 +17,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from .redact import redact
+
 # Under pythonw (login / desktop icon) every console child such as git would
 # otherwise pop up its own flashing terminal window.
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -29,7 +31,7 @@ def git_info(folder: str) -> dict | None:
     def git(*args: str) -> str:
         r = subprocess.run(
             ["git", "-C", folder, *args],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3,
             creationflags=NO_WINDOW,
         )
         return r.stdout.strip() if r.returncode == 0 else ""
@@ -40,12 +42,16 @@ def git_info(folder: str) -> dict | None:
         dirty = [l for l in git("status", "--porcelain").splitlines() if l.strip()]
     except (OSError, subprocess.SubprocessError):
         return None
-    info = {"branch": branch, "uncommitted": len(dirty), "last_commit": None, "last_commit_msg": ""}
+    # Branch names and commit messages can hold a pasted token too, and they reach Claude.
+    info = {"branch": redact(branch), "uncommitted": len(dirty), "last_commit": None, "last_commit_msg": ""}
     if log:
         when, _, msg = log.partition("\x1f")
         info["last_commit"] = _to_local(when)
-        info["last_commit_msg"] = msg
+        info["last_commit_msg"] = redact(msg)
     return info
+
+
+SCAN_FILES = 30
 
 
 def claude_projects_root() -> Path:
@@ -81,7 +87,10 @@ def claude_sessions(folder: str, limit: int = 3) -> list[dict]:
         return []
     d = claude_dir_for(folder)
     try:
-        dated = sorted(((last_message_time(f), f) for f in d.glob("*.jsonl")), reverse=True)[:limit]
+        # Read the real last-message time of only the newest files by date, so a folder with
+        # hundreds of chats doesn't slow down every session start.
+        files = sorted(d.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)[:SCAN_FILES]
+        dated = sorted(((last_message_time(f), f) for f in files), reverse=True)[:limit]
     except OSError:
         return []
     sessions = []

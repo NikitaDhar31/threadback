@@ -34,7 +34,8 @@ const SAVED: Record<string, object> = {
 
 // Nothing sits beneath the plugin: each hook here stands for the engine.
 // `runs` collects the commands the panel's buttons ran.
-function engine(on: any, cwd: string, runs: string[][] = [], answer = { exitCode: 0, stdout: 'ok', stderr: '' }) {
+function engine(on: any, cwd: string, runs: string[][] = [], answer = { exitCode: 0, stdout: 'ok', stderr: '' },
+                saved: Record<string, object> = SAVED) {
   on('command.register', () => ({ value: { command: 'threadback-panel' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('clock.every', () => ({ value: undefined }))
@@ -45,12 +46,12 @@ function engine(on: any, cwd: string, runs: string[][] = [], answer = { exitCode
   }))
   on('fs.exists', () => ({ value: true }))
   on('fs.list', () => ({
-    value: Object.keys(SAVED).map(name => ({ name, kind: 'file', size: 1, mtimeMs: 0, isLink: false })),
+    value: Object.keys(saved).map(name => ({ name, kind: 'file', size: 1, mtimeMs: 0, isLink: false })),
   }))
   on('fs.read', (_: unknown, e: { path: string }) => ({
     value: e.path.endsWith('tb-path')
       ? 'C:/plugins/threadback/scripts/tb.py\n'
-      : JSON.stringify(SAVED[Object.keys(SAVED).find(name => e.path.endsWith(name)) as string]),
+      : JSON.stringify(saved[Object.keys(saved).find(name => e.path.endsWith(name)) as string]),
   }))
   on('process.run', (_: unknown, e: { argv: string[] }) => {
     if (e.argv[0] === 'py') throw new Error('py not installed') // falls back to python3
@@ -73,6 +74,26 @@ test('shows the deepest matching project: next step, state, open tasks', async (
     expect((await ui.find({ type: 'Text', text: /without saving/ }))?.text).toMatch(/^2 chats/)
     await ui.unmount()
   }
+})
+
+test('on macOS and Linux, folders that differ only in case are different projects', async ($, on) => {
+  const runs: string[][] = []
+  const saved = {
+    'upper.json': { name: 'Upper', slug: 'upper', folder: '/work/App', next_action: 'upper step', tasks: [] },
+    'lower.json': {
+      name: 'Lower', slug: 'lower', folder: '/work/app', next_action: 'lower step',
+      tasks: [{ text: 'Lower task', done: false }],
+    },
+  }
+  engine(on, '/work/app/src', runs, undefined, saved)
+  await $.session.start({ cwd: '/work/app/src', surface: 'desktop', isInteractive: true })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^Lower$/ }))?.text).toBe('Lower')
+  expect(await ui.find({ type: 'Text', text: /upper step/ })).toBeUndefined()
+  await ui.press({ key: 'done-1' })
+  expect(runs.at(-1)?.slice(-2)).toEqual(['--project', 'lower'])  // the buttons edit the project shown
+  await ui.unmount()
 })
 
 test('a project with no open tasks shows no tasks section', async ($, on) => {

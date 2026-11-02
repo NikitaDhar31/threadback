@@ -23,9 +23,11 @@ their next steps.
    its next step and a suggestion for which one to resume. Pick one and you get the
    command that reopens your last Claude chat there.
 
-Forgot to save? If a chat ends without `/threadback-save`, ThreadBack keeps a free
-trace of it (your last messages and Claude's last answer, no AI) and shows it next
-time. It never overwrites the next step you planned.
+Forgot to save? If a chat ends without `/threadback-save`, ThreadBack notes it, and the
+next time you open that project it keeps a free trace of it (your last messages and
+Claude's last answer, no AI). It never overwrites the next step you planned. (Claude Code
+gives session-end hooks about 1.5 seconds, so on exit ThreadBack only records which chat
+ended; the reading happens later.)
 
 Already have old projects? Open a chat in the folder and run `/threadback-save`. With
 nothing to save from the chat itself, Claude catches up from a short, pre-filtered
@@ -54,8 +56,10 @@ They don't conflict, so you can use both.
 - [Claude Code](https://claude.com/claude-code) on Windows, macOS or Linux.
 - **Python 3.10 or newer**, available as `python3` (macOS/Linux) or `py` / `python`
   (Windows). If Python is missing, new chats show a message saying so and where to get it.
-- **bash.** macOS and Linux have it. On Windows, Claude Code already uses Git Bash
-  ([Git for Windows](https://git-scm.com/downloads/win)).
+- **bash.** macOS and Linux have it. On Windows, install
+  [Git for Windows](https://git-scm.com/downloads/win), which Claude Code uses for its
+  shell anyway. Without Git Bash, Claude Code runs hooks in PowerShell, and ThreadBack's
+  hooks won't start (or may reach WSL's unrelated `bash`).
 
 No other dependencies: ThreadBack uses only Python's standard library.
 
@@ -115,8 +119,10 @@ you type.
   uncommitted file names, and the first lines of the README. It runs local `git`
   commands only, never `git fetch` or anything that talks to a remote.
 - **Claude Code's own chat files** in `~/.claude/projects/<folder-name>/`, which Claude
-  Code already keeps on your disk: chat titles, dates, your messages and Claude's last
-  answer in each chat. Tool output and file contents inside those chats are skipped.
+  Code already keeps on your disk: chat titles, dates, your messages and Claude's
+  replies in each chat. Tool output (command results, files Claude opened) is skipped,
+  but Claude's replies are kept as written, so anything Claude quoted in a reply, such
+  as a few lines of a file, can be included.
 - Nothing else: not your other files, not your browser, not any cloud account.
 
 **What it keeps**, all in `~/.threadback/` (set `THREADBACK_HOME` to move it, e.g. into
@@ -193,7 +199,9 @@ claude plugin update threadback@threadback
 
 Hooks use only the documented hook input (`session_id`, `cwd`), and Claude Code's chat
 files are read defensively, so a format change hides a section rather than breaking a
-session. Hook errors never block a session; they go to `~/.threadback/hook-errors.log`.
+session. A hook error never stops a session; it goes to `~/.threadback/hook-errors.log`.
+Session start runs a few local `git` commands (each limited to 3 seconds) and reads only
+the newest chat files, so it usually adds well under a second.
 
 ## License
 

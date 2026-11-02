@@ -38,7 +38,14 @@ type Saved = {
 
 type Action = 'add' | 'done' | 'undo' | 'remove' | 'top' | 'next'
 
-const norm = (path: string) => path.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
+// Folder names ignore case on Windows only, as ThreadBack's own find_by_folder does:
+// on macOS and Linux /work/App and /work/app are two different projects.
+const isWindowsPath = (path: string) => /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith('\\\\')
+
+function norm(path: string): string {
+  if (!isWindowsPath(path)) return path.replace(/\/+$/, '')
+  return path.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
+}
 
 async function dataDir($: EngineInterface): Promise<string> {
   const own = await $.env.get('THREADBACK_HOME')
@@ -64,7 +71,8 @@ async function load($: EngineInterface): Promise<ProjectView | null> {
     }
     if (!p.folder) continue
     const folder = norm(p.folder)
-    const holds = cwd === folder || cwd.startsWith(folder + '\\')
+    const sep = isWindowsPath(folder) ? '\\' : '/'
+    const holds = cwd === folder || cwd.startsWith(folder + sep)
     if (holds && (best === null || folder.length > norm(best.folder ?? '').length)) best = p
   }
   if (best === null) return null

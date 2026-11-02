@@ -32,22 +32,28 @@ User's note (may be empty; if present, it wins for the next step): $ARGUMENTS
    they are large and the digest already holds what matters.
 
 2. From **this conversation** (or the digest, in catch-up mode), draft (leave out anything that doesn't apply; never invent):
-   - `-s` summary: 1–2 sentences on what was actually done.
-   - `--state`: where things stand now (what works, what's half-done).
-   - `-n` next step: ONE concrete action to start with next time (file, feature, command).
-   - `-d "decision | why"`: real decisions made this session, with the reason (0–3).
-   - `-t`: new unfinished tasks, each a short summary of at most about 120 characters
-     (what to do, not how; put how-to detail in `--state` or a decision). `--done N`: numbers of saved tasks finished this session.
+   - `summary`: 1–2 sentences on what was actually done.
+   - `state`: where things stand now (what works, what's half-done).
+   - `next`: ONE concrete action to start with next time (file, feature, command).
+   - `decisions`: real decisions made this session, each `{"text": ..., "why": ...}` (0–3).
+   - `tasks`: new unfinished tasks, each a short summary of at most about 120 characters
+     (what to do, not how; put how-to detail in `state` or a decision). `done`: numbers of saved tasks finished this session.
      Before adding a task, check whether the user already said they did it ("done", "it's on");
-     if so, don't add it (or mark it `--done` if it was saved earlier).
-   - `-b`: new blockers. `--unblock N`: saved blockers now resolved.
-   - `-i`: ideas discussed but not implemented.
+     if so, don't add it (or put its number in `done` if it was saved earlier).
+   - `blockers`: new blockers. `unblock`: numbers of saved blockers now resolved.
+   - `ideas`: ideas discussed but not implemented.
 
-3. Save in a single command from the project folder, double-quoting every value
-   (escape any inner double quotes). Example:
+3. Save with one command from the project folder. Pass the values as one JSON object inside the
+   quoted heredoc exactly as shown: the quotes around `'THREADBACK_JSON'` stop the shell from
+   reading anything in the text (quotes, `$`, backticks), so never put these values on the command
+   line itself. Leave out keys that don't apply. The closing `THREADBACK_JSON` goes alone at the
+   very start of its line. Example:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" save -s "..." --state "..." -n "..." -d "... | ..." -t "..."
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" save --json <<'THREADBACK_JSON'
+   {"summary": "...", "state": "...", "next": "...",
+    "decisions": [{"text": "...", "why": "..."}], "tasks": ["..."], "done": [3]}
+   THREADBACK_JSON
    ```
 
 4. Reply in at most 5 lines: what was saved, and the next step, word for word.

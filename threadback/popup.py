@@ -32,9 +32,10 @@ def unsaved(p: dict) -> str:
 
 def quick_save(slug: str, did: str, next_step: str) -> dict:
     """Save from the window: reload first so we never overwrite newer edits."""
-    p = store.find(slug)
-    store.add_session(p, did, next_step)
-    store.save(p)
+    with store.lock():
+        p = store.find(slug)
+        store.add_session(p, did, next_step)
+        store.save(p)
     return p
 
 
