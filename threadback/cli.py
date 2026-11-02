@@ -93,8 +93,8 @@ def brief(project: dict, ctx: dict) -> str:
     if p["last_state"]:
         out.append(f"\nWhere you left off:\n  {p['last_state']}")
     if not p["sessions"] and not p["next_action"]:
-        seen = last_work(ctx)
-        out.append("\nNothing saved yet." + (f" Seen in the folder: {seen}." if seen else "") +
+        seen = last_work(ctx)  # a commit message or chat title: the folder's text, fenced as data
+        out.append("\nNothing saved yet." + (" Seen in the folder:\n" + fence(seen) if seen else "") +
                    "\n  Run /threadback-save in a Claude Code chat here to catch up from its history.")
     if p["sessions"]:
         s = p["sessions"][-1]

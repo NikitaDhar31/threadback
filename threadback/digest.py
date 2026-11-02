@@ -56,7 +56,7 @@ def git_log(folder: str, since: datetime | None = None, limit: int = 10) -> list
 def readme(folder: str, lines: int = 20, chars: int = 1200) -> str:
     try:
         root = Path(folder).resolve()
-    except OSError:
+    except (OSError, RuntimeError):
         return ""
     for name in ("README.md", "README.txt", "README", "readme.md"):
         try:
@@ -67,7 +67,7 @@ def readme(folder: str, lines: int = 20, chars: int = 1200) -> str:
                 continue
             with f.open("rb") as fh:
                 head = fh.read(chars * 8)  # the top is all that's shown; never load a huge file
-        except OSError:
+        except (OSError, RuntimeError):  # RuntimeError: a link loop on Python before 3.13
             continue
         text = head.decode("utf-8", errors="replace")
         kept = [l.rstrip() for l in text.splitlines() if l.strip()][:lines]

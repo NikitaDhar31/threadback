@@ -27,7 +27,35 @@ def projects_dir() -> Path:
         # Only the user can read what ThreadBack keeps (macOS/Linux; Windows ignores modes).
         home().mkdir(mode=0o700, parents=True, exist_ok=True)
         d.mkdir(mode=0o700, exist_ok=True)
+    _make_private()
     return d
+
+
+_private_checked = False
+
+
+def _make_private() -> None:
+    """Versions before 0.7.3 created the data folders and files with the default modes, often
+    readable by other users on a shared Mac or Linux machine. Once per process, take group and
+    other access away from what's already there. Windows: profile folders are private already."""
+    global _private_checked
+    if _private_checked or os.name == "nt":
+        return
+    _private_checked = True
+    root = home()
+    paths = [root, root / "projects"]
+    try:
+        paths += [f for f in root.iterdir() if f.is_file() and not f.is_symlink()]
+        paths += [f for f in (root / "projects").iterdir() if f.is_file() and not f.is_symlink()]
+    except OSError:
+        pass
+    for path in paths:
+        try:
+            mode = path.stat().st_mode
+            if mode & 0o077:
+                path.chmod(mode & 0o700)
+        except OSError:
+            pass  # not ours to change (a shared folder set up on purpose): leave it
 
 
 def now() -> str:
