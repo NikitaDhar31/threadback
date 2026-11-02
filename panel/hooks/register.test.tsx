@@ -35,7 +35,15 @@ const SAVED: Record<string, object> = {
 // Nothing sits beneath the plugin: each hook here stands for the engine.
 // `runs` collects the commands the panel's buttons ran.
 function engine(on: any, cwd: string, runs: string[][] = [], answer = { exitCode: 0, stdout: 'ok', stderr: '' },
-                saved: Record<string, object> = SAVED) {
+                saved: Record<string, object> = SAVED, links: Record<string, string> = {}) {
+  // $.fs.stat with resolve: where a path really lands (links followed); others stay as given.
+  // A test host on Windows makes '/work/app' absolute as 'D:\work\app' before this hook sees
+  // it; for a Mac/Linux path the mock answers as a Mac would, with the path as it was.
+  const posix = cwd.startsWith('/')
+  on('fs.stat', (_: unknown, e: { path: string }) => {
+    const path = posix ? e.path.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/') : e.path
+    return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: path in links, realPath: links[path] ?? path } }
+  })
   on('command.register', () => ({ value: { command: 'threadback-panel' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('clock.every', () => ({ value: undefined }))
@@ -93,6 +101,19 @@ test('on macOS and Linux, folders that differ only in case are different project
   expect(await ui.find({ type: 'Text', text: /upper step/ })).toBeUndefined()
   await ui.press({ key: 'done-1' })
   expect(runs.at(-1)?.slice(-2)).toEqual(['--project', 'lower'])  // the buttons edit the project shown
+  await ui.unmount()
+})
+
+test('a chat opened through a link finds the project, as the core does', async ($, on) => {
+  const saved = {
+    'linked.json': { name: 'Linked', slug: 'linked', folder: '/private/var/work/site', next_action: 'go', tasks: [] },
+  }
+  // macOS: /var is a link to /private/var; the session reports the spelling the user typed.
+  engine(on, '/var/work/site/src', [], undefined, saved, { '/var/work/site/src': '/private/var/work/site/src' })
+  await $.session.start({ cwd: '/var/work/site/src', surface: 'desktop', isInteractive: true })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^Linked$/ }))?.text).toBe('Linked')
   await ui.unmount()
 })
 

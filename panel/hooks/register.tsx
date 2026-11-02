@@ -47,6 +47,13 @@ function norm(path: string): string {
   return path.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
 }
 
+/** Where a folder really is, links followed, as the core's realpath does: on macOS /var is
+ *  /private/var. A folder that can't be resolved (gone, no access) keeps its own spelling. */
+async function real($: EngineInterface, path: string): Promise<string> {
+  const stat = await $.fs.stat(path, { resolve: true }).catch(() => undefined)
+  return norm(stat?.realPath ?? path)
+}
+
 async function dataDir($: EngineInterface): Promise<string> {
   const own = await $.env.get('THREADBACK_HOME')
   if (own) return own
@@ -59,8 +66,9 @@ async function dataDir($: EngineInterface): Promise<string> {
 async function load($: EngineInterface): Promise<ProjectView | null> {
   const dir = `${await dataDir($)}/projects`
   if (!(await $.fs.exists(dir))) return null
-  const cwd = norm(await $.session.cwd())
+  const cwd = await real($, await $.session.cwd())
   let best: Saved | null = null
+  let bestFolder = ''
   for (const entry of await $.fs.list(dir)) {
     if (entry.kind !== 'file' || !entry.name.endsWith('.json')) continue
     let p: Saved
@@ -70,10 +78,13 @@ async function load($: EngineInterface): Promise<ProjectView | null> {
       continue
     }
     if (!p.folder) continue
-    const folder = norm(p.folder)
+    const folder = await real($, p.folder)
     const sep = isWindowsPath(folder) ? '\\' : '/'
     const holds = cwd === folder || cwd.startsWith(folder + sep)
-    if (holds && (best === null || folder.length > norm(best.folder ?? '').length)) best = p
+    if (holds && (best === null || folder.length > bestFolder.length)) {
+      best = p
+      bestFolder = folder
+    }
   }
   if (best === null) return null
   return {

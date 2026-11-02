@@ -195,6 +195,17 @@ _JSON_KEYS = {"summary": "summary", "state": "state", "next": "next", "status": 
               "unblock": "unblock", "ideas": "idea", "links": "link"}
 
 
+def _json_item(key: str, attr: str, item) -> str:
+    """One list entry of --json: text, or {"text", "why"} ({"label", "url"} for links)."""
+    if isinstance(item, str):
+        return item
+    first, second = ("label", "url") if attr == "link" else ("text", "why")
+    if isinstance(item, dict) and isinstance(item.get(first), str) and \
+            isinstance(item.get(second, ""), str) and set(item) <= {first, second}:
+        return f"{item[first]} | {item.get(second, '')}" if item.get(second) else item[first]
+    raise ValueError(f'--json: each of {key} must be text or {{"{first}": ..., "{second}": ...}}')
+
+
 def _read_json_save(a) -> None:
     """Fill the save options from JSON on stdin. Slash commands pass text written from the
     chat this way, through a quoted heredoc, so nothing in it can reach a shell."""
@@ -212,15 +223,18 @@ def _read_json_save(a) -> None:
             continue
         value = data[key]
         if attr in ("summary", "state", "next", "status"):
-            setattr(a, attr, str(value))
+            if not isinstance(value, str):
+                raise ValueError(f"--json: {key} must be text")
+            setattr(a, attr, value)
             continue
         items = value if isinstance(value, list) else [value]
         if attr in ("done", "unblock"):
-            setattr(a, attr, [int(n) for n in items])
+            # bool is an int in Python, but true/false is never a task number
+            if not all(isinstance(n, int) and not isinstance(n, bool) for n in items):
+                raise ValueError(f"--json: {key} must be task numbers, e.g. [2, 5]")
+            setattr(a, attr, items)
             continue
-        pair_key = "url" if attr == "link" else "why"
-        setattr(a, attr, [f"{i.get('text') or i.get('label', '')} | {i.get(pair_key, '')}"
-                          if isinstance(i, dict) else str(i) for i in items])
+        setattr(a, attr, [_json_item(key, attr, i) for i in items])
     if a.status and a.status not in store.STATUSES:
         raise ValueError(f"--json: status must be one of {', '.join(store.STATUSES)}")
 
@@ -228,13 +242,14 @@ def _read_json_save(a) -> None:
 def cmd_save(a) -> None:
     if a.json:
         _read_json_save(a)
-    p = resolve(a.name, register=True)
     flags = any([a.summary, a.state, a.next, a.decision, a.task, a.done, a.blocker,
                  a.unblock, a.idea, a.status, a.link])
+    if not flags and not sys.stdin.isatty():
+        sys.exit("Nothing to save. Pass flags (see --help) or run in a terminal for prompts.")
+    with store.lock():  # registering a new folder is a write too: two first saves make one project
+        p = resolve(a.name, register=True)
     if not flags:
-        if not sys.stdin.isatty():
-            sys.exit("Nothing to save. Pass flags (see --help) or run in a terminal for prompts.")
-        _interactive_save(p, a)
+        _interactive_save(p, a)  # prompts run unlocked, so a slow answer never holds up the hooks
     with store.lock():
         _apply_save(store.reload(p), a)
 

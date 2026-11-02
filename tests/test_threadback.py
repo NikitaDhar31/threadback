@@ -737,3 +737,69 @@ class LockTests(TempHome):
         with store.lock(timeout=1):
             pass
         self.assertFalse(lock.exists())
+
+
+class SecondReviewTests(TempHome):
+    """Findings of the second pre-release review."""
+
+    def test_lock_that_cannot_be_taken_never_hangs(self):
+        import time
+        store.home().mkdir(parents=True, exist_ok=True)
+        (store.home() / ".lock").mkdir()  # a folder in the way: can't be created or removed
+        old = datetime.now().timestamp() - 60
+        os.utime(store.home() / ".lock", (old, old))
+        start = time.monotonic()
+        with mock.patch("sys.stderr", io.StringIO()) as err, store.lock(timeout=0.5):
+            pass
+        self.assertLess(time.monotonic() - start, 3)
+        self.assertIn("going ahead without it", err.getvalue())
+
+    def test_hook_stdout_is_one_json_object_despite_a_corrupt_project(self):
+        folder = self.tmp / "app"
+        folder.mkdir()
+        p = store.new_project("App", folder=str(folder))
+        p["next_action"] = "go"
+        store.save(p)
+        (store.projects_dir() / "broken.json").write_text("{ not json", encoding="utf-8")
+        out = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(json.dumps({"session_id": "s", "cwd": str(folder)}))), \
+                redirect_stdout(out), mock.patch("sys.stderr", io.StringIO()) as err:
+            from threadback import hooks
+            hooks.run("session-start")
+        self.assertIn("go", json.loads(out.getvalue())["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("broken.json", err.getvalue())
+
+    def test_a_failed_capture_is_retried_then_given_up(self):
+        from threadback import hooks
+        p = store.new_project("App")
+        p["pending_captures"] = [{"session_id": "s1", "cwd": "", "transcript_path": "x"}]
+        with mock.patch.object(hooks, "auto_capture", side_effect=OSError("locked")):
+            for tries in (1, 2):
+                hooks.capture_pending(p)
+                self.assertEqual([c["tries"] for c in p["pending_captures"]], [tries])
+            hooks.capture_pending(p)
+        self.assertEqual(p["pending_captures"], [])  # third failure: dropped
+        log = (store.home() / "hook-errors.log").read_text(encoding="utf-8")
+        self.assertEqual(log.count("locked"), 3)
+
+    def test_save_json_checks_types(self):
+        self.run_cli("new", "Shop")
+        for bad in ('{"summary": 5}', '{"next": ["a"]}', '{"done": ["2"]}', '{"done": [true]}',
+                    '{"done": [{"n": 1}]}', '{"tasks": [3]}', '{"decisions": [{"text": 1}]}',
+                    '{"decisions": [{"text": "a", "extra": "b"}]}'):
+            with self.subTest(bad), mock.patch("sys.stdin", io.StringIO(bad)), \
+                    self.assertRaises(SystemExit) as caught:
+                self.run_cli("save", "Shop", "--json")
+            self.assertIn("--json", str(caught.exception.code))
+
+    def test_parallel_first_saves_make_one_project(self):
+        folder = self.tmp / "fresh app"
+        folder.mkdir()
+        tb = Path(__file__).resolve().parent.parent / "scripts" / "tb.py"
+        procs = [subprocess.Popen([sys.executable, str(tb), "save", "-t", f"task {n}"], cwd=folder,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.PIPE) for n in range(6)]
+        errors = [p.communicate(timeout=60)[1] for p in procs]
+        self.assertEqual([p.returncode for p in procs], [0] * 6, errors)
+        projects = store.load_all()
+        self.assertEqual([p["name"] for p in projects], ["fresh app"])
+        self.assertEqual(len(projects[0]["tasks"]), 6)

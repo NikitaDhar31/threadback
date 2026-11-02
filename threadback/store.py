@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -83,21 +84,26 @@ def lock(timeout: float = 5.0):
     path.parent.mkdir(parents=True, exist_ok=True)
     deadline = time.monotonic() + timeout
     fd = None
-    while fd is None:
+    while True:
         try:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
+            break
+        except (FileExistsError, PermissionError):
+            # Held by another writer (Windows says PermissionError while it's being deleted).
+            # A lock older than 30 s was left by a crashed process: remove it and try again.
             try:
                 if time.time() - path.stat().st_mtime > 30:
                     path.unlink()
-                    continue
             except OSError:
-                continue  # released meanwhile
-            if time.monotonic() > deadline:
-                break
-            time.sleep(0.03)
+                pass  # released meanwhile, or not ours to remove (say, a folder)
         except OSError:
-            break  # can't lock (read-only folder?): go ahead unlocked
+            pass  # can't create it here at all; the deadline below decides
+        # Every path through the loop checks the deadline, so nothing can spin for ever.
+        if time.monotonic() > deadline:
+            print(f"threadback: couldn't lock {path} within {timeout:g}s; going ahead without it",
+                  file=sys.stderr)
+            break
+        time.sleep(0.03)
     _held += 1
     try:
         yield
@@ -160,7 +166,8 @@ def load_all() -> list[dict]:
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as e:
-            print(f"warning: skipping unreadable {p.name}: {e}")
+            # stderr: a hook's stdout must hold its one JSON answer and nothing else
+            print(f"warning: skipping unreadable {p.name}: {e}", file=sys.stderr)
             continue
         base = new_project(data.get("name") or p.stem)
         base.update(data)  # tolerate files written by older versions or by hand

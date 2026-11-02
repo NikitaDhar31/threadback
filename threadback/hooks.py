@@ -28,6 +28,7 @@ from .redact import redact
 MAX_CONTEXT_CHARS = 6000
 DIGEST_CHARS = 1800
 TASK_CHARS = 160
+MAX_CAPTURE_TRIES = 3
 
 
 def run(event: str) -> None:
@@ -39,15 +40,20 @@ def run(event: str) -> None:
         if out:
             print(json.dumps(out, ensure_ascii=False))
     except Exception:
-        try:
-            import traceback
+        import traceback
 
-            log = store.home() / "hook-errors.log"
-            log.parent.mkdir(parents=True, exist_ok=True)
-            with log.open("a", encoding="utf-8") as f:
-                f.write(f"--- {store.now()} {event}\n{traceback.format_exc()}\n")
-        except OSError:
-            pass
+        log_error(event, traceback.format_exc())
+
+
+def log_error(what: str, detail: str) -> None:
+    """Hooks never fail a session: what went wrong goes to ~/.threadback/hook-errors.log."""
+    try:
+        log = store.home() / "hook-errors.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with log.open("a", encoding="utf-8") as f:
+            f.write(f"--- {store.now()} {what}\n{detail.rstrip()}\n")
+    except OSError:
+        pass
 
 
 def _project_for(payload: dict) -> dict | None:
@@ -104,12 +110,18 @@ def capture_pending(p: dict) -> bool:
     pending = p.get("pending_captures") or []
     if not pending:
         return False
+    retry = []
     for c in pending:
         try:
             auto_capture(p, c)
-        except (OSError, ValueError):
-            pass  # an unreadable transcript just isn't captured
-    p["pending_captures"] = []
+        except (OSError, ValueError) as e:
+            # Often passing (the file still locked or syncing): keep it for the next opening,
+            # up to MAX_CAPTURE_TRIES in all, and note why in the error log.
+            c = {**c, "tries": c.get("tries", 0) + 1}
+            log_error("capture", f"{c.get('transcript_path') or c['session_id']}: {e} (try {c['tries']})")
+            if c["tries"] < MAX_CAPTURE_TRIES:
+                retry.append(c)
+    p["pending_captures"] = retry
     return True
 
 
