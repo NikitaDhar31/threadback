@@ -176,3 +176,7 @@ py -m unittest discover -s tests -t .
 
 - Import ChatGPT's official data export to auto-link conversations by project.
 - Optional AI-generated resumption brief from the saved context.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

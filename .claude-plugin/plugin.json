@@ -2,6 +2,7 @@
   "name": "threadback",
   "version": "0.6.1",
   "description": "Resume where you left off: gives Claude each project's saved next step, tasks and decisions at session start, and saves progress with /threadback-save.",
+  "license": "MIT",
   "author": {
     "name": "Nikita Dhar"
   }
