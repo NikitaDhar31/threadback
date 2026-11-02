@@ -190,8 +190,6 @@ def brief_for_claude(p: dict, ctx: dict) -> str:
         copied.append(f"- Chat ended without /threadback-save, {a['date'][:16]}, {a['messages']} "
                       "message(s). Last asked: " + " / ".join(a["asked"])
                       + (f" | Claude's last answer: {a['last_answer']}" if a["last_answer"] else ""))
-    if ctx["git"] and ctx["git"]["uncommitted"]:
-        copied.append(f"- Git: {ctx['git']['uncommitted']} uncommitted change(s) on branch {ctx['git']['branch']}.")
     if copied:
         lines.append("Auto-captured since the last save (newer than the saved context):")
         lines.append(fence("\n".join(copied)))

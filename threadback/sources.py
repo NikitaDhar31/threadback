@@ -1,7 +1,7 @@
 """Read-only signals gathered automatically from the local machine.
 
 Nothing here talks to the network or needs credentials:
-- git: last commit and uncommitted changes in the project folder.
+- git: branch and last commit of the project folder (never `git status`; see git_info).
 - Claude Code: session transcripts that Claude Code itself keeps under
   ~/.claude/projects/<encoded-folder>/<session-id>.jsonl. This is an
   undocumented local format, so every field is optional and failures are
@@ -25,8 +25,8 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 # A project folder may be someone else's repo, and git runs programs a repo's own config names:
-# core.fsmonitor (status), filter drivers (status), log.showSignature -> gpg.program (log),
-# and the same again inside submodules. ThreadBack only reads, so every git call goes through
+# core.fsmonitor and filter drivers (status, which ThreadBack never runs), log.showSignature ->
+# gpg.program (log). ThreadBack only reads, so every git call goes through
 # run_git(), which turns all of these off.
 GIT_SAFE_CONFIG = ["-c", "core.fsmonitor=false", "-c", "log.showSignature=false",
                    "-c", "core.quotePath=false"]
@@ -62,20 +62,10 @@ def run_git(folder: str, *args: str, timeout: float = 3, ok: tuple[int, ...] = (
     return r.stdout if r.returncode in ok else None
 
 
-def git_status(folder: str) -> list[str] | None:
-    """`git status --porcelain` lines, or None when it isn't safe to run. Status can run a
-    filter driver (filter.<name>.clean/process) on changed files, and no switch turns filters
-    off. Filters from the user's own system or global config (Git LFS, often) are theirs; one
-    set by the repo's own config (local, worktree, or a file it includes) means status is
-    skipped. If git can't say where a filter comes from (older than 2.26), status is skipped."""
-    filters = run_git(folder, "config", "--show-scope", "--get-regexp",
-                      r"^filter\..*\.(clean|smudge|process)$", ok=(0, 1))  # 1: none set
-    if filters is None:
-        return None
-    if any(line.split(None, 1)[0] in ("local", "worktree") for line in filters.splitlines() if line.strip()):
-        return None
-    out = run_git(folder, "status", "--porcelain", "--ignore-submodules=all")
-    return None if out is None else [l for l in out.splitlines() if l.strip()]
+# No `git status`, by design: it is the one git command that reads the work tree's files, so
+# it is where filters (any configured one, picked by the repo's .gitattributes) and fsmonitor
+# run programs. ThreadBack's other commands read only git's own objects and refs. Claude Code
+# already gives Claude a git status snapshot at the start of every chat.
 
 
 def git_info(folder: str) -> dict | None:
@@ -83,9 +73,8 @@ def git_info(folder: str) -> dict | None:
         return None
     log = (run_git(folder, "log", "-1", "--no-show-signature", "--format=%cI%x1f%s") or "").strip()
     branch = (run_git(folder, "rev-parse", "--abbrev-ref", "HEAD") or "").strip()
-    dirty = git_status(folder) or []
     # Branch names and commit messages can hold a pasted token too, and they reach Claude.
-    info = {"branch": redact(branch), "uncommitted": len(dirty), "last_commit": None, "last_commit_msg": ""}
+    info = {"branch": redact(branch), "last_commit": None, "last_commit_msg": ""}
     if log:
         when, _, msg = log.partition("\x1f")
         info["last_commit"] = _to_local(when)

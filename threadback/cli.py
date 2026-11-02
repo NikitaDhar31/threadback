@@ -127,8 +127,6 @@ def brief(project: dict, ctx: dict) -> str:
             line += f"last commit {ago(git['last_commit'])} - {git['last_commit_msg']}"
         else:
             line += "no commits yet"
-        if git["uncommitted"]:
-            line += f"; {git['uncommitted']} uncommitted change(s)"
         out.append("\n" + fence(line))
     if ctx["claude"]:
         out.append("\nRecent Claude Code sessions in this folder:")

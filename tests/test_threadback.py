@@ -166,7 +166,7 @@ class SourceTests(TempHome):
         (repo / "x.txt").write_text("x")
         info = sources.git_info(str(repo))
         self.assertEqual(info["last_commit_msg"], "first")
-        self.assertEqual(info["uncommitted"], 1)
+        self.assertNotIn("uncommitted", info)  # git status is never run (see GitConfigTests)
         self.assertIsNone(sources.git_info(str(self.tmp)))
 
     def test_git_runs_without_console_window(self):
@@ -456,7 +456,7 @@ class DigestTests(TempHome):
         folder = self.make_folder()
         (folder / "notes.txt").write_text("wip", encoding="utf-8")
         text = digest.build(str(folder))
-        self.assertIn("Uncommitted changes (1): notes.txt", text)
+        self.assertNotIn("notes.txt", text)  # no git status: uncommitted files aren't listed
         self.assertIn("Tracks garden watering.", text)
         self.assertIn("Add watering schedule  [README.md]", text)
         self.assertIn("Claude chat: Reminder emails", text)
@@ -593,14 +593,14 @@ class RedactTests(TempHome):
         g("init", "-q")
         g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", f"token {key}")
         g("checkout", "-q", "-b", f"fix-{key}")
-        (folder / "x.txt").write_text("dirty")  # uncommitted, so the branch line is shown
         p = store.new_project("Branchy", folder=str(folder))
         p["next_action"] = "go"
         store.save(p)
         out = json.loads(self.run_hook(hooks, str(folder)))["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("uncommitted change", out)
         self.assertNotIn(key, out)
-        self.assertNotIn(key, self.run_cli("show", "branchy"))
+        shown = self.run_cli("show", "branchy")
+        self.assertNotIn(key, shown)
+        self.assertIn("Git (fix-[REDACTED])", shown)  # the branch is still shown, masked
 
     def run_hook(self, hooks, cwd):
         buf = io.StringIO()
@@ -1081,14 +1081,39 @@ class GitConfigTests(TempHome):
         self.all_threadback_reads(folder)
         self.assertFalse(marker.exists(), "ThreadBack's git calls ran the repo's filter")
 
-    def test_user_wide_filters_still_allow_status(self):
-        """Git LFS is often set up in the system or global config: the user's own, so status runs."""
-        folder, marker, script, g = self.evil_repo("lfsish")
-        (folder / "b.txt").write_text("new", encoding="utf-8")
+    def test_a_global_filter_picked_by_the_repo_never_runs(self):
+        """Final check, v0.7.6: the program is the user's own global filter, but the repo's
+        .gitattributes selects it, so `git status` in that repo runs it."""
+        folder, marker, script, g = self.evil_repo("filter")  # "filter": the script passes stdin through
+        (folder / ".gitattributes").write_text("*.txt filter=evil\n", encoding="utf-8")
         user_cfg = self.tmp / "user.gitconfig"
-        user_cfg.write_text("[filter \"lfs\"]\n\tclean = git-lfs clean -- %f\n", encoding="utf-8")
+        user_cfg.write_text(f'[filter "evil"]\n\tclean = sh "{script.as_posix()}"\n', encoding="utf-8")
         with mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(user_cfg)}):
-            self.assertEqual(sources.git_info(str(folder))["uncommitted"], 1)
+            self.touch_same_size(folder / "a.txt")
+            subprocess.run(["git", "-C", str(folder), "status"], capture_output=True,
+                           stdin=subprocess.DEVNULL, timeout=60)
+            if not marker.exists():
+                self.skipTest("this git doesn't run the clean filter on status here")
+            marker.unlink()
+            self.touch_same_size(folder / "a.txt")
+            self.all_threadback_reads(folder)
+        self.assertFalse(marker.exists(), "ThreadBack's git calls ran a filter the repo selected")
+
+    def test_threadback_never_runs_git_status(self):
+        """Status is the one command that reads work-tree files (filters, fsmonitor): never run."""
+        folder, marker, script, g = self.evil_repo("plain")
+        commands = []
+        real_run = subprocess.run
+
+        def spy(argv, *a, **k):
+            if "git" in Path(str(argv[0])).name.lower():
+                # [exe, "-C", folder, *GIT_SAFE_CONFIG, command, ...]
+                commands.append(argv[3 + len(sources.GIT_SAFE_CONFIG)])
+            return real_run(argv, *a, **k)
+        with mock.patch("threadback.sources.subprocess.run", spy):
+            self.all_threadback_reads(folder)
+        self.assertTrue(commands)  # it did run git
+        self.assertEqual(set(commands), {"log", "rev-parse"})  # and never status
 
     def test_git_is_never_taken_from_the_current_folder(self):
         here = self.tmp / "repo-with-fake-git"

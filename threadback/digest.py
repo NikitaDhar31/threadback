@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .redact import DATA_END, DATA_START, fence, redact
-from .sources import _to_local, ago, claude_dir_for, claude_sessions, git_status, run_git
+from .sources import _to_local, ago, claude_dir_for, claude_sessions, run_git
 
 MAX_CHARS = 6000
 
@@ -29,13 +29,6 @@ def _git(folder: str, *args: str) -> str:
     if not folder or not (Path(folder) / ".git").exists():
         return ""
     return run_git(folder, *args, timeout=10) or ""
-
-
-def uncommitted(folder: str) -> list[str]:
-    """Changed and new files not yet committed: often the work that was in progress."""
-    if not folder or not (Path(folder) / ".git").exists():
-        return []
-    return [l[3:].strip() for l in git_status(folder) or []]
 
 
 def git_log(folder: str, since: datetime | None = None, limit: int = 10) -> list[dict]:
@@ -152,10 +145,6 @@ def build(folder: str, since: datetime | None = None, max_chars: int = MAX_CHARS
             files = _clip(", ".join(c["files"][:3]), 100) + more
             day = f"{c['date']:%Y-%m-%d}" if c["date"] else "?"
             out.append(f"- {day} {c['msg']}" + (f"  [{files}]" if files else ""))
-    dirty = uncommitted(folder)
-    if dirty:
-        more = f" +{len(dirty) - 6} more" if len(dirty) > 6 else ""
-        out += ["", f"Uncommitted changes ({len(dirty)}): " + _clip(", ".join(dirty[:6]), 300) + more]
     for c in chats(folder, since, n_chats):
         out += ["", f"Claude chat: {c['title'] or '(untitled)'} - {c['last_active']:%Y-%m-%d} "
                     f"({ago(c['last_active'])})", "  User asked:"]

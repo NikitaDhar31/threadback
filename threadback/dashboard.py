@@ -86,8 +86,6 @@ def card(p: dict, ctx: dict) -> str:
         s = f"git <b>{e(git['branch'])}</b>: "
         s += (f"last commit {e(ago(git['last_commit']))} - {e(git['last_commit_msg'])}"
               if git["last_commit"] else "no commits yet")
-        if git["uncommitted"]:
-            s += f" - <b>{git['uncommitted']} uncommitted</b>"
         signals.append(s)
     for s in ctx["claude"][:2]:
         title = s["title"] or s["last_prompt"][:80] or "(untitled)"
