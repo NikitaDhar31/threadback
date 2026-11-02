@@ -95,9 +95,10 @@ them, reorder them and choose the next step there, with no AI involved.
 claude plugin install threadback-panel@threadback
 ```
 
-It needs the `threadback` plugin and a Claude Code version with mods, which are early
-access and may change between releases. That's why it's a separate plugin: ThreadBack
-itself works without it.
+It needs the `threadback` plugin and a recent Claude Code with mods (it's tested on
+2.1.309 and later), which are early access and may change between releases. Older
+versions list it as "failed to load"; updating Claude Code fixes that. That's why it's
+a separate plugin: ThreadBack itself works without it.
 
 ![The optional panel beside a chat, with the next step and editable tasks](docs/screenshots/panel.png)
 
