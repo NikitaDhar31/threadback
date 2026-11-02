@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .redact import DATA_END, DATA_START, fence, redact
-from .sources import NO_WINDOW, _to_local, ago, claude_dir_for, claude_sessions
+from .sources import _to_local, ago, claude_dir_for, claude_sessions, git_status, run_git
 
 MAX_CHARS = 6000
 
@@ -25,24 +25,23 @@ def _clip(text: str, n: int) -> str:
 
 
 def _git(folder: str, *args: str) -> str:
+    """Through sources.run_git, which keeps a repo's own config from running programs."""
     if not folder or not (Path(folder) / ".git").exists():
         return ""
-    try:
-        r = subprocess.run(["git", "-C", folder, "-c", "core.quotePath=false", *args], capture_output=True,
-                           text=True, encoding="utf-8", errors="replace", timeout=10, creationflags=NO_WINDOW)
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return r.stdout if r.returncode == 0 else ""
+    return run_git(folder, *args, timeout=10) or ""
 
 
 def uncommitted(folder: str) -> list[str]:
     """Changed and new files not yet committed: often the work that was in progress."""
-    return [l[3:].strip() for l in _git(folder, "status", "--porcelain").splitlines() if l.strip()]
+    if not folder or not (Path(folder) / ".git").exists():
+        return []
+    return [l[3:].strip() for l in git_status(folder) or []]
 
 
 def git_log(folder: str, since: datetime | None = None, limit: int = 10) -> list[dict]:
     """Recent commits, newest first: date, subject and changed files."""
-    args = ["log", f"-{limit}", "--format=%x1e%cI%x1f%s", "--name-only"]
+    args = ["log", f"-{limit}", "--no-show-signature", "--no-textconv", "--no-ext-diff",
+            "--format=%x1e%cI%x1f%s", "--name-only"]
     if since:
         args.append(f"--since={since.isoformat()}")
     commits = []

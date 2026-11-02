@@ -1012,3 +1012,94 @@ class FifthReviewTests(TempHome):
         self.assertEqual(sources._to_local("2026-11-02T13:00:00Z"),
                          sources._to_local("2026-11-02T13:00:00+00:00"))
         self.assertIsNotNone(sources._to_local("2026-11-02T13:00:00Z"))
+
+
+class GitConfigTests(TempHome):
+    """A repo's own .git/config can name programs for git to run. ThreadBack only reads,
+    so none of them may run when it looks at a project (final review blocker)."""
+
+    def evil_repo(self, name):
+        folder = self.tmp / name
+        folder.mkdir()
+        marker = self.tmp / f"{name}-ran"
+        script = self.tmp / f"{name}.sh"
+        # Writes the marker. As a filter it also passes the file through (cat); as an fsmonitor
+        # it must not read stdin, or git waits on it.
+        tail = "cat\n" if name == "filter" else "exit 1\n"
+        script.write_text(f'#!/bin/sh\necho ran > "{marker.as_posix()}"\n{tail}', encoding="utf-8")
+        script.chmod(0o755)
+        g = lambda *a: subprocess.run(["git", "-C", str(folder), *a], check=True, capture_output=True)
+        g("init", "-q")
+        (folder / "a.txt").write_text("one\n", encoding="utf-8")
+        g("add", ".")
+        g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "first")
+        return folder, marker, script, g
+
+    def touch_same_size(self, path):
+        """Change content but not size, so status must read the file (running filters)."""
+        import time
+        time.sleep(1.1)
+        path.write_text("two\n", encoding="utf-8")
+
+    def all_threadback_reads(self, folder):
+        from threadback import digest
+        sources.git_info(str(folder))
+        digest.build(str(folder))
+        p = store.new_project(f"P {folder.name}", folder=str(folder))
+        p["next_action"] = "go"
+        store.save(p)
+        buf = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(json.dumps({"session_id": "s", "cwd": str(folder)}))), \
+                redirect_stdout(buf):
+            from threadback import hooks
+            hooks.run("session-start")
+        self.run_cli("show", p["slug"])
+        self.run_cli("list")
+
+    def test_fsmonitor_from_repo_config_never_runs(self):
+        folder, marker, script, g = self.evil_repo("fsmon")
+        g("config", "core.fsmonitor", script.as_posix())
+        subprocess.run(["git", "-C", str(folder), "status"], capture_output=True,
+                       stdin=subprocess.DEVNULL, timeout=60)
+        if not marker.exists():
+            self.skipTest("this git doesn't run core.fsmonitor here, so the attack can't be shown")
+        marker.unlink()  # plain git ran it: the repo is a real attack
+        self.all_threadback_reads(folder)
+        self.assertFalse(marker.exists(), "ThreadBack's git calls ran the repo's fsmonitor")
+
+    def test_filter_from_repo_config_never_runs(self):
+        folder, marker, script, g = self.evil_repo("filter")
+        (folder / ".gitattributes").write_text("*.txt filter=evil\n", encoding="utf-8")
+        g("config", "filter.evil.clean", f'sh "{script.as_posix()}"')
+        self.touch_same_size(folder / "a.txt")
+        subprocess.run(["git", "-C", str(folder), "status"], capture_output=True,
+                       stdin=subprocess.DEVNULL, timeout=60)
+        if not marker.exists():
+            self.skipTest("this git doesn't run the clean filter on status here")
+        marker.unlink()
+        self.touch_same_size(folder / "a.txt")
+        self.all_threadback_reads(folder)
+        self.assertFalse(marker.exists(), "ThreadBack's git calls ran the repo's filter")
+
+    def test_user_wide_filters_still_allow_status(self):
+        """Git LFS is often set up in the system or global config: the user's own, so status runs."""
+        folder, marker, script, g = self.evil_repo("lfsish")
+        (folder / "b.txt").write_text("new", encoding="utf-8")
+        user_cfg = self.tmp / "user.gitconfig"
+        user_cfg.write_text("[filter \"lfs\"]\n\tclean = git-lfs clean -- %f\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(user_cfg)}):
+            self.assertEqual(sources.git_info(str(folder))["uncommitted"], 1)
+
+    def test_git_is_never_taken_from_the_current_folder(self):
+        here = self.tmp / "repo-with-fake-git"
+        here.mkdir()
+        fake = here / ("git.exe" if os.name == "nt" else "git")
+        fake.write_text("fake", encoding="utf-8")
+        fake.chmod(0o755)
+        os.chdir(here)
+        self.addCleanup(os.chdir, Path(__file__).resolve().parent.parent)
+        path = os.pathsep.join([".", "", str(here.name), os.environ.get("PATH", "")])
+        with mock.patch.dict(os.environ, {"PATH": path}):
+            exe = sources._git_exe()
+        self.assertTrue(exe and os.path.isabs(exe))
+        self.assertNotEqual(Path(exe).resolve(), fake.resolve())

@@ -24,24 +24,66 @@ from .redact import redact
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
+# A project folder may be someone else's repo, and git runs programs a repo's own config names:
+# core.fsmonitor (status), filter drivers (status), log.showSignature -> gpg.program (log),
+# and the same again inside submodules. ThreadBack only reads, so every git call goes through
+# run_git(), which turns all of these off.
+GIT_SAFE_CONFIG = ["-c", "core.fsmonitor=false", "-c", "log.showSignature=false",
+                   "-c", "core.quotePath=false"]
+
+
+def _git_exe() -> str | None:
+    """git's full path, from absolute PATH entries only. Hooks run inside the project folder,
+    and Windows looks in the current folder first: a repo could ship its own git.exe."""
+    names = ("git.exe", "git.cmd", "git.bat") if os.name == "nt" else ("git",)
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        if not entry or not os.path.isabs(entry):
+            continue  # "." or a relative entry would mean the project folder
+        for name in names:
+            path = os.path.join(entry, name)
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+    return None
+
+
+def run_git(folder: str, *args: str, timeout: float = 3, ok: tuple[int, ...] = (0,)) -> str | None:
+    """Run a read-only git command in `folder`; its stdout, or None if git failed (an exit code
+    not in `ok`) or isn't there."""
+    exe = _git_exe()
+    if exe is None:
+        return None
+    env = {**os.environ, "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0"}
+    try:
+        r = subprocess.run([exe, "-C", folder, *GIT_SAFE_CONFIG, *args], capture_output=True,
+                           stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", timeout=timeout,
+                           creationflags=NO_WINDOW, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout if r.returncode in ok else None
+
+
+def git_status(folder: str) -> list[str] | None:
+    """`git status --porcelain` lines, or None when it isn't safe to run. Status can run a
+    filter driver (filter.<name>.clean/process) on changed files, and no switch turns filters
+    off. Filters from the user's own system or global config (Git LFS, often) are theirs; one
+    set by the repo's own config (local, worktree, or a file it includes) means status is
+    skipped. If git can't say where a filter comes from (older than 2.26), status is skipped."""
+    filters = run_git(folder, "config", "--show-scope", "--get-regexp",
+                      r"^filter\..*\.(clean|smudge|process)$", ok=(0, 1))  # 1: none set
+    if filters is None:
+        return None
+    if any(line.split(None, 1)[0] in ("local", "worktree") for line in filters.splitlines() if line.strip()):
+        return None
+    out = run_git(folder, "status", "--porcelain", "--ignore-submodules=all")
+    return None if out is None else [l for l in out.splitlines() if l.strip()]
+
+
 def git_info(folder: str) -> dict | None:
     if not folder or not (Path(folder) / ".git").exists():
         return None
-
-    def git(*args: str) -> str:
-        r = subprocess.run(
-            ["git", "-C", folder, *args],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3,
-            creationflags=NO_WINDOW,
-        )
-        return r.stdout.strip() if r.returncode == 0 else ""
-
-    try:
-        log = git("log", "-1", "--format=%cI%x1f%s")
-        branch = git("rev-parse", "--abbrev-ref", "HEAD")
-        dirty = [l for l in git("status", "--porcelain").splitlines() if l.strip()]
-    except (OSError, subprocess.SubprocessError):
-        return None
+    log = (run_git(folder, "log", "-1", "--no-show-signature", "--format=%cI%x1f%s") or "").strip()
+    branch = (run_git(folder, "rev-parse", "--abbrev-ref", "HEAD") or "").strip()
+    dirty = git_status(folder) or []
     # Branch names and commit messages can hold a pasted token too, and they reach Claude.
     info = {"branch": redact(branch), "uncommitted": len(dirty), "last_commit": None, "last_commit_msg": ""}
     if log:

@@ -117,7 +117,9 @@ you type.
 
 - **Your project folders:** git branch, recent commit messages and changed file names,
   uncommitted file names, and the first lines of the README. It runs local `git`
-  commands only, never `git fetch` or anything that talks to a remote.
+  commands only, never `git fetch` or anything that talks to a remote. A repo's own git
+  config can name programs for git to run (an fsmonitor, filters, signature checks);
+  ThreadBack turns those off, and skips `git status` in a repo that sets its own filters.
 - **Claude Code's own chat files** in `~/.claude/projects/<folder-name>/`, which Claude
   Code already keeps on your disk: chat titles, dates, your messages and Claude's
   replies in each chat. Tool output (command results, files Claude opened) is skipped,
