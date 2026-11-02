@@ -13,7 +13,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from .redact import redact
+from .redact import DATA_END, DATA_START, fence, redact
 from .sources import NO_WINDOW, _to_local, ago, claude_dir_for, claude_sessions
 
 MAX_CHARS = 6000
@@ -163,7 +163,11 @@ def build(folder: str, since: datetime | None = None, max_chars: int = MAX_CHARS
     if len(out) == 1:
         out.append("No commits or Claude Code chats found" + (" since then." if since else "."))
     text = redact("\n".join(out))  # chats and commits often hold pasted keys
-    return text if len(text) <= max_chars else text[: max_chars - 20] + "\n[...truncated]"
+    room = max(max_chars - len(DATA_START) - len(DATA_END) - 2, 40)  # the fence counts too
+    if len(text) > room:
+        text = text[: room - 20] + "\n[...truncated]"
+    # README, commits and chats are the folder's text, not the user's: Claude reads it as data.
+    return fence(text)
 
 
 def last_saved(project: dict) -> datetime | None:

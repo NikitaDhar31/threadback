@@ -20,13 +20,12 @@ import sys
 from pathlib import Path
 
 from . import store
-from .redact import redact
+from .redact import fence, redact
 
 # digest, sources (git, chat files) and traceback load only where used: session end
 # has 1.5 s in all, Python's own start included.
 
 MAX_CONTEXT_CHARS = 6000
-DIGEST_CHARS = 1800
 TASK_CHARS = 160
 MAX_CAPTURE_TRIES = 3
 
@@ -149,14 +148,12 @@ def auto_capture(p: dict, payload: dict, keep: int = 10) -> bool:
 
 
 def catch_up_hint(p: dict) -> str:
-    """Nothing saved yet: hand Claude a short digest so it still knows what happened here."""
-    from . import digest
-
-    d = digest.build(p["folder"], max_chars=DIGEST_CHARS, n_chats=2, messages=4) if p["folder"] else ""
-    return ("\nNothing has been saved for this project yet. Automatic digest of the folder "
-            "(commits and earlier Claude chats, may be partial):\n" + d +
-            "\nIf the user asks what they were doing, answer from this. Suggest /threadback-save "
-            "to save a proper catch-up.")
+    """Nothing saved yet. The folder's own history (README, commits, old chats) is not loaded
+    here: a repo can plant instructions in it, and session-start context is trusted. The user
+    asks for it with /threadback-save, which reads the digest as fenced data."""
+    return ("\nNothing has been saved for this project yet. If the user asks what they were doing "
+            "here, or wants to catch up, suggest /threadback-save: it reads a short digest of the "
+            "folder's commits and earlier chats and saves a proper catch-up.")
 
 
 def brief_for_claude(p: dict, ctx: dict) -> str:
@@ -187,15 +184,17 @@ def brief_for_claude(p: dict, ctx: dict) -> str:
     if summaries:
         lines.append("Recent sessions:")
         lines += [f"- {s['date'][:10]}: {s['summary']}" for s in summaries]
-    autos = p.get("auto_saves", [])[-3:]
-    if autos:
-        lines.append("Chats that ended without /threadback-save (auto-captured; newer than the saved context):")
-        for a in autos:
-            lines.append(f"- {a['date'][:16]}, {a['messages']} message(s). Last asked: "
-                         + " / ".join(a["asked"]) + (f" | Claude's last answer: {a['last_answer']}"
-                                                    if a["last_answer"] else ""))
+    # Copied from chats and git, not written for ThreadBack: fenced as data (see redact.fence).
+    copied = []
+    for a in p.get("auto_saves", [])[-3:]:
+        copied.append(f"- Chat ended without /threadback-save, {a['date'][:16]}, {a['messages']} "
+                      "message(s). Last asked: " + " / ".join(a["asked"])
+                      + (f" | Claude's last answer: {a['last_answer']}" if a["last_answer"] else ""))
     if ctx["git"] and ctx["git"]["uncommitted"]:
-        lines.append(f"Git: {ctx['git']['uncommitted']} uncommitted change(s) on {ctx['git']['branch']}.")
+        copied.append(f"- Git: {ctx['git']['uncommitted']} uncommitted change(s) on branch {ctx['git']['branch']}.")
+    if copied:
+        lines.append("Auto-captured since the last save (newer than the saved context):")
+        lines.append(fence("\n".join(copied)))
     lines.append("Don't recite all of this unprompted; use it when relevant. If the user asks what they "
                  "were doing, lead with the next step. When they wrap up, suggest /threadback-save.")
     text = redact("\n".join(lines))  # saved fields are masked already; git and chat text too now

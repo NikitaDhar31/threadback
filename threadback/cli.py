@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import dashboard, digest, hooks, startup, store
-from .redact import redact
+from .redact import fence, redact
 from .sources import ago, context, last_work, suggest_resume
 
 
@@ -102,8 +102,8 @@ def brief(project: dict, ctx: dict) -> str:
     autos = p.get("auto_saves", [])
     if autos:
         out.append(f"\nChats that ended without saving ({len(autos)}, auto-captured):")
-        for a in autos[-3:]:
-            out.append(f"  - {a['date'][:16]}  last asked: {a['asked'][-1] if a['asked'] else '-'}")
+        out.append(fence("\n".join(f"  - {a['date'][:16]}  last asked: {a['asked'][-1] if a['asked'] else '-'}"
+                                    for a in autos[-3:])))
     if p["blockers"]:
         out.append("\nBlockers:")
         out += [f"  {i}. {b['text']}" for i, b in enumerate(p["blockers"], 1)]
@@ -119,22 +119,23 @@ def brief(project: dict, ctx: dict) -> str:
     if p["ideas"]:
         out.append("\nIdeas not yet implemented:")
         out += [f"  - {x['text']}" for x in p["ideas"]]
+    # Branch, commit message and chat titles come from the folder, not the user: fenced as data.
     git = ctx["git"]
     if git:
-        line = f"\nGit ({git['branch']}): "
+        line = f"Git ({git['branch']}): "
         if git["last_commit"]:
             line += f"last commit {ago(git['last_commit'])} - {git['last_commit_msg']}"
         else:
             line += "no commits yet"
         if git["uncommitted"]:
             line += f"; {git['uncommitted']} uncommitted change(s)"
-        out.append(line)
+        out.append("\n" + fence(line))
     if ctx["claude"]:
         out.append("\nRecent Claude Code sessions in this folder:")
-        for s in ctx["claude"]:
-            title = s["title"] or s["last_prompt"][:70] or "(untitled)"
-            out.append(f"  - {title}  ({ago(s['last_active'])})")
-        out.append(f"    resume latest: cd \"{p['folder']}\" && claude --resume {ctx['claude'][0]['id']}")
+        out.append(fence("\n".join(f"  - {s['title'] or s['last_prompt'][:70] or '(untitled)'}  "
+                                    f"({ago(s['last_active'])})" for s in ctx["claude"])))
+        out.append(f"    resume latest: cd {shlex.quote(p['folder'])} && "
+                   f"claude --resume {shlex.quote(ctx['claude'][0]['id'])}")
     if p["links"] or p["folder"]:
         out.append("\nLinks (threadback open <project> <label>):")
         if p["folder"]:

@@ -149,6 +149,14 @@ Stripe, ...), JWTs, private keys, bearer tokens, passwords in URLs and `password
 `api_key:` style values. This is best effort: a random string with no known shape or
 label can slip through.
 
+**Text from the folder is treated as data:** a README, commit messages or an old chat
+could contain instructions planted by someone else. ThreadBack never loads a folder's own
+history at the start of a chat; the catch-up digest is read only when you run
+`/threadback-save`. Wherever such text reaches Claude (the digest, auto-captured chats,
+branch and commit names, chat titles), it is fenced between markers that tell Claude it is
+information only and never instructions to follow. This makes planted instructions far
+less likely to work, though no marker can guarantee that a model ignores them.
+
 ## Command line
 
 Everything also works from a terminal, without Claude. From a clone of this repo
