@@ -522,9 +522,9 @@ class RedactTests(TempHome):
 
     def test_ordinary_text_is_left_alone(self):
         from threadback.redact import redact
-        for text in ["Fixed the password reset flow", "max_tokens=4096", "author: Nikita",
+        for text in ["Fixed the password reset flow", "max_tokens=4096", "author: Sam",
                      "Use OAuth for login", "Bumped version to 0.4.1", "secret sauce: none",
-                     "D:/AI Agents/Claude/ThreadBack", "Tokens: 1200 used"]:
+                     "D:/Projects/my-app", "Tokens: 1200 used"]:
             with self.subTest(text):
                 self.assertEqual(redact(text), text)
 
