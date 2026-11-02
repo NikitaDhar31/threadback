@@ -8,7 +8,7 @@ knows what you were doing, why, what's unfinished, and what you meant to do next
 when you're not sure which project to pick up, `/threadback-all` shows all of them with
 their next steps.
 
-<!-- screenshot: a new chat opening in a project, Claude starting from the saved next step -->
+![A new chat in a project: Claude starts from the saved next step, open tasks and decisions](docs/screenshots/resume.png)
 
 ## How it works
 
@@ -31,7 +31,7 @@ Already have old projects? Open a chat in the folder and run `/threadback-save`.
 nothing to save from the chat itself, Claude catches up from a short, pre-filtered
 digest of the folder's commits and earlier Claude chats.
 
-<!-- screenshot: /threadback-all listing several projects with their next steps -->
+![/threadback-all lists every project with its next step and suggests one to resume](docs/screenshots/all-projects.png)
 
 ## How it differs from memory plugins
 
@@ -99,7 +99,7 @@ It needs the `threadback` plugin and a Claude Code version with mods, which are 
 access and may change between releases. That's why it's a separate plugin: ThreadBack
 itself works without it.
 
-<!-- screenshot: the panel beside a chat -->
+![The optional panel beside a chat, with the next step and editable tasks](docs/screenshots/panel.png)
 
 ## Privacy: what ThreadBack reads, keeps and sends
 
