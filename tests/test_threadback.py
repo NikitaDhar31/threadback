@@ -344,6 +344,7 @@ class PluginTests(TempHome):
             store.register_folder(str(Path.home()))
 
 
+@unittest.skipUnless(os.name == "nt", "the welcome window and startup are a Windows-only extra")
 class StartupTests(TempHome):
     def test_install_and_remove(self):
         (self.tmp / "desktop").mkdir()
@@ -562,7 +563,14 @@ class NoPythonTests(unittest.TestCase):
         if not bash or "system32" in bash.lower():
             self.skipTest("needs bash (Git Bash on Windows)")
         tb = Path(__file__).resolve().parent.parent / "scripts" / "tb"
-        env = {**os.environ, "PATH": str(Path(bash).parent)}  # bash's own folder, no Python
+        if os.name == "nt":
+            path = str(Path(bash).parent)  # Git Bash's own folder has no Python
+        else:  # /usr/bin holds python3 on Mac/Linux, so offer only what scripts/tb needs
+            bin_dir = Path(tempfile.mkdtemp())
+            for tool in ("bash", "dirname"):
+                (bin_dir / tool).symlink_to(shutil.which(tool))
+            path = str(bin_dir)
+        env = {**os.environ, "PATH": path}
         return subprocess.run([bash, str(tb), *args], input="{}", capture_output=True,
                               text=True, env=env, timeout=30)
 
