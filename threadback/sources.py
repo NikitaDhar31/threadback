@@ -122,6 +122,9 @@ def claude_sessions(folder: str, limit: int = 3) -> list[dict]:
 
 
 def _to_local(iso: str) -> datetime | None:
+    # git writes UTC as "Z" (...T13:00:00Z), which Python 3.10's fromisoformat refuses.
+    if iso.endswith(("Z", "z")):
+        iso = iso[:-1] + "+00:00"
     try:
         return datetime.fromisoformat(iso).astimezone().replace(tzinfo=None, microsecond=0)
     except ValueError:

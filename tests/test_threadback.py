@@ -1006,3 +1006,9 @@ class FifthReviewTests(TempHome):
             self.skipTest("this system won't create a symlink (Windows without developer mode)")
         (folder / "README.txt").write_text("# Fallback\nworks", encoding="utf-8")
         self.assertIn("works", digest.readme(str(folder)))  # the loop is skipped, not fatal
+
+    def test_git_dates_in_utc_parse_on_every_python(self):
+        """git writes UTC times with a trailing Z; Python 3.10 alone can't read that by itself."""
+        self.assertEqual(sources._to_local("2026-11-02T13:00:00Z"),
+                         sources._to_local("2026-11-02T13:00:00+00:00"))
+        self.assertIsNotNone(sources._to_local("2026-11-02T13:00:00Z"))
