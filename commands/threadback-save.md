@@ -36,7 +36,8 @@ User's note (may be empty; if present, it wins for the next step): $ARGUMENTS
    - `--state`: where things stand now (what works, what's half-done).
    - `-n` next step: ONE concrete action to start with next time (file, feature, command).
    - `-d "decision | why"`: real decisions made this session, with the reason (0–3).
-   - `-t`: new unfinished tasks. `--done N`: numbers of saved tasks finished this session.
+   - `-t`: new unfinished tasks, each a short summary of at most about 120 characters
+     (what to do, not how; put how-to detail in `--state` or a decision). `--done N`: numbers of saved tasks finished this session.
      Before adding a task, check whether the user already said they did it ("done", "it's on");
      if so, don't add it (or mark it `--done` if it was saved earlier).
    - `-b`: new blockers. `--unblock N`: saved blockers now resolved.

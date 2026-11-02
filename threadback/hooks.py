@@ -20,8 +20,9 @@ from pathlib import Path
 from . import digest, store
 from .sources import ago, claude_dir_for, context
 
-MAX_CONTEXT_CHARS = 3500
+MAX_CONTEXT_CHARS = 6000
 DIGEST_CHARS = 1800
+TASK_CHARS = 160
 
 
 def run(event: str) -> None:
@@ -126,7 +127,10 @@ def brief_for_claude(p: dict, ctx: dict) -> str:
         lines.append("Blockers: " + "; ".join(b["text"] for b in p["blockers"]))
     tasks = [(i, t) for i, t in enumerate(p["tasks"], 1) if not t.get("done")]
     if tasks:
-        lines.append("Unfinished tasks: " + "; ".join(f"{i}. {t['text']}" for i, t in tasks[:10]))
+        # All of them, clipped: a cut-off list hides the user's later plans from Claude.
+        # /threadback-save writes short tasks; long ones typed by hand end in "..." here.
+        lines.append("Unfinished tasks (any ending in '...' are shortened; /threadback shows the full text):")
+        lines += [f"{i}. {digest._clip(t['text'], TASK_CHARS)}" for i, t in tasks]
     if p["decisions"]:
         lines.append("Recent decisions:")
         lines += [f"- {d['text']}" + (f" (why: {d['why']})" if d.get("why") else "")

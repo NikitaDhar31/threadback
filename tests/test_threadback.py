@@ -261,6 +261,18 @@ class PluginTests(TempHome):
         self.run_cli("save", "proj", "-s", "fixed date picker")
         self.assertEqual(store.find("proj")["auto_saves"], [])
 
+    def test_session_start_lists_every_open_task(self):
+        folder = self.make_project()
+        p = store.find("proj")
+        p["tasks"] += [{"text": f"task {n}", "done": False} for n in range(2, 16)]
+        p["tasks"][2]["done"] = True
+        store.save(p)
+        ctx = json.loads(self.hook("session-start", {"session_id": "s1", "cwd": str(folder)}))
+        text = ctx["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("15. task 15", text)  # nothing past the tenth is dropped
+        self.assertNotIn("task 3\n", text)  # done tasks stay out
+        self.assertIn("Use SQLite", text)  # decisions still fit after the tasks
+
     def test_only_messages_after_the_last_save_are_captured(self):
         folder = self.make_project()
         self.run_cli("save", "proj", "-s", "did the first part")
