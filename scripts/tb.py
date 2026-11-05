@@ -13,8 +13,9 @@ if len(sys.argv) == 3 and sys.argv[1] == "hook":
     # Hooks skip the command-line module: session end has 1.5 s in all, startup included.
     from threadback.hooks import run  # noqa: E402
 
-    for stream in (sys.stdout, sys.stderr):
-        stream.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles
+    # Windows reads pipes in the local code page; Claude Code sends UTF-8 (folder names too)
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
     run(sys.argv[2])
 else:
     from threadback.cli import main  # noqa: E402

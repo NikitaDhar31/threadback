@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shlex
 import subprocess
 import sys
 import webbrowser
@@ -70,7 +69,7 @@ def resolve(name: str | None, register: bool = False) -> dict:
     if p:
         return p
     if not register:
-        raise LookupError(f"{cwd} isn't a ThreadBack project yet. Run 'threadback save' here to start tracking it.")
+        raise LookupError(f"{cwd} isn't a ThreadBack project yet. Run /threadback-save in a Claude Code chat here (or 'save' from the command line) to start tracking it.")
     p = store.register_folder(cwd)
     print(f"Registered new project '{p['name']}' for {p['folder']}")
     return p
@@ -133,8 +132,7 @@ def brief(project: dict, ctx: dict) -> str:
         out.append(fence("\n".join(f"  - {s['title'] or s['last_prompt'][:70] or '(untitled)'}  "
                                     f"({ago(s['last_active'])})" for s in ctx["claude"])))
         if not store.has_control_chars(p["folder"]):
-            out.append(f"    resume latest: cd {shlex.quote(p['folder'])} && "
-                       f"claude --resume {shlex.quote(ctx['claude'][0]['id'])}")
+            out.append("    resume latest: " + store.resume_command(p["folder"], ctx["claude"][0]["id"]))
     if p["links"] or p["folder"]:
         out.append("\nLinks (threadback open <project> <label>):")
         if p["folder"]:  # the folder's name is not the user's text either: fenced as data
@@ -394,9 +392,7 @@ def cmd_open(a) -> None:
             sys.exit("This project's folder name has line breaks or control characters, so no "
                      "command is shown for it. Open the folder yourself and start claude there.")
         ctx = context(p)
-        # shlex.quote: a folder name can hold quotes or $( ), and the line is meant to be pasted.
-        resume = f" --resume {shlex.quote(ctx['claude'][0]['id'])}" if ctx["claude"] else ""
-        print(f"cd {shlex.quote(p['folder'])} && claude{resume}")
+        print(store.resume_command(p["folder"], ctx["claude"][0]["id"] if ctx["claude"] else None))
         return
     hits = [l for l in p["links"] if what in l["label"].lower()]
     if not hits:
@@ -529,9 +525,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    for stream in (sys.stdout, sys.stderr):
+    # Windows reads pipes in the local code page; `save --json` and hooks send UTF-8
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles
+            stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
     args = build_parser().parse_args(argv)

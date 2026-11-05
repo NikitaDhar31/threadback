@@ -92,8 +92,8 @@ def card(p: dict, ctx: dict) -> str:
         signals.append(f"Claude Code: {e(title)} <span class='why'>({e(ago(s['last_active']))})</span>")
     if signals:
         parts.append("<h3>Detected activity</h3>" + _list(signals))
-    if ctx["claude"]:
-        cmd = f'cd "{p["folder"]}" && claude --resume {ctx["claude"][0]["id"]}'
+    if ctx["claude"] and not store.has_control_chars(p["folder"]):
+        cmd = store.resume_command(p["folder"], ctx["claude"][0]["id"])
         parts.append(f"<div style='margin-top:6px'><code>{e(cmd)}</code></div>")
 
     links = []

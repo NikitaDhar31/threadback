@@ -169,7 +169,7 @@ Everything also works from a terminal, without Claude. From a clone of this repo
 py -m threadback                      # all projects, and which one to resume
 py -m threadback show "my project"    # full brief for one project
 py -m threadback save "my project"    # save a session by answering a few prompts
-py -m threadback task add "write tests"
+py -m threadback task add "write tests" -p "my project"
 py -m threadback link "my project" "ChatGPT: API design" https://chatgpt.com/c/...
 py -m threadback dashboard            # HTML overview in your browser
 ```

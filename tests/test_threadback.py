@@ -662,6 +662,31 @@ class GitBashPathTests(unittest.TestCase):
         self.assertNotIn("No such file", ran.stderr)
 
 
+class Utf8StdinTests(TempHome):
+    """Windows reads pipes in the local code page (cp1252); hooks and `save --json` get UTF-8."""
+
+    def run_tb(self, args, data: str):
+        tb = Path(__file__).resolve().parent.parent / "scripts" / "tb.py"
+        env = {**os.environ, "PYTHONIOENCODING": "", "PYTHONUTF8": "0"}
+        return subprocess.run([sys.executable, str(tb), *args], input=data.encode("utf-8"),
+                              capture_output=True, env=env, timeout=60)
+
+    def test_save_json_keeps_any_text(self):
+        self.run_cli("new", "Shop")
+        text = "中文 🍝 café — ok"
+        ran = self.run_tb(["save", "Shop", "--json"], json.dumps({"summary": text}, ensure_ascii=False))
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertEqual(store.find("Shop")["sessions"][-1]["summary"], text)
+
+    def test_session_start_finds_a_folder_with_accents(self):
+        folder = self.tmp / "Café Recettes"
+        folder.mkdir()
+        self.run_cli("new", "Cafe", "--folder", str(folder))
+        payload = json.dumps({"session_id": "s", "cwd": str(folder)}, ensure_ascii=False)
+        ran = self.run_tb(["hook", "session-start"], payload)
+        self.assertIn("ThreadBack context for project", ran.stdout.decode("utf-8"))
+
+
 class TaskEditTests(TempHome):
     """`tb task`, which the panel's buttons call."""
 
@@ -749,7 +774,29 @@ class SafeCommandTests(TempHome):
         self.assertIn("[shop]", self.run_cli("list", "--slugs"))
         self.assertNotIn("[shop]", self.run_cli("list"))
         line = self.run_cli("open", "shop", "claude").strip()
-        self.assertEqual(shlex.split(line), ["cd", str(folder.resolve()), "&&", "claude"])
+        if os.name != "nt":
+            self.assertEqual(shlex.split(line), ["cd", str(folder.resolve()), "&&", "claude"])
+        self.assertTrue(line.endswith("; claude") if os.name == "nt" else line.endswith("&& claude"))
+
+    @unittest.skipUnless(os.name == "nt", "Windows shells")
+    def test_resume_command_runs_in_windows_powershell(self):
+        """Windows PowerShell 5.1 has no `&&` and is what most Windows terminals open."""
+        import shutil
+        ps = shutil.which("powershell")
+        if not ps:
+            self.skipTest("needs Windows PowerShell")
+        for name in ("plain app", "it's $(whoami) [x] app", "curly ’quote"):
+            with self.subTest(name):
+                folder = self.tmp / name
+                folder.mkdir()
+                line = store.resume_command(str(folder), "abc-123")
+                cd, claude = line.rsplit("; ", 1)
+                self.assertEqual(claude, "claude --resume abc-123")
+                ran = subprocess.run([ps, "-NoProfile", "-Command",
+                                      f"{cd}; [Console]::OutputEncoding = [Text.Encoding]::UTF8; "
+                                      "(Get-Location).ProviderPath"],
+                                     capture_output=True, timeout=60)
+                self.assertEqual(ran.stdout.decode("utf-8").strip(), str(folder), ran.stderr)
 
 
 class LockTests(TempHome):

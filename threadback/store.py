@@ -245,6 +245,23 @@ def has_control_chars(text: str) -> bool:
     return bool(re.search(r"[\x00-\x1f\x7f-\x9f  ]", text))
 
 
+def resume_command(folder: str, session_id: str | None = None) -> str:
+    """The line that reopens a project's latest chat, meant to be pasted: a folder name can
+    hold quotes or $( ), so it is quoted for the shell people use on this system."""
+    import shlex
+
+    claude = "claude" + (f" --resume {shlex.quote(session_id)}" if session_id else "")
+    if os.name != "nt":
+        return f"cd {shlex.quote(folder)} && {claude}"
+    # Windows PowerShell 5.1 has no `&&` and cmd has no single quotes; `cd '...'; claude`
+    # runs in PowerShell and Git Bash. PowerShell also reads curly quotes as quotes, and
+    # [ ] as wildcards, so such folders get its own literal form.
+    if re.search(r"['‘’‚‛\[\]]", folder):
+        literal = re.sub(r"(['‘’‚‛])", r"\1\1", folder)
+        return f"Set-Location -LiteralPath '{literal}'; {claude}"
+    return f"cd '{folder}'; {claude}"
+
+
 def register_folder(path: str) -> dict:
     """Create a project for a folder, named after it. Refuses drive roots and home."""
     folder = Path(path).resolve()
