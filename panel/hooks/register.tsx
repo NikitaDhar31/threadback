@@ -271,7 +271,7 @@ export const register: Register = on => {
         {problem !== '' && <Text color="error">{problem}</Text>}
         {p.unsaved > 0 && (
           <Text color="warning">
-            {p.unsaved} chat{p.unsaved === 1 ? '' : 's'} ended without saving - run /threadback-save
+            {p.unsaved} chat{p.unsaved === 1 ? '' : 's'} with unsaved messages - run /threadback-save
           </Text>
         )}
       </Box>

@@ -79,7 +79,7 @@ test('shows the deepest matching project: next step, state, open tasks', async (
     expect((await ui.find({ type: 'Text', text: /Add tests/ }))?.text).toBe('Add tests')
     expect(await ui.find({ type: 'Text', text: /Old task/ })).toBeUndefined()
     expect((await ui.find({ type: 'Text', text: /Open tasks/ }))?.text).toBe('Open tasks (1)')
-    expect((await ui.find({ type: 'Text', text: /without saving/ }))?.text).toMatch(/^2 chats/)
+    expect((await ui.find({ type: 'Text', text: /unsaved messages/ }))?.text).toMatch(/^2 chats with/)
     await ui.unmount()
   }
 })

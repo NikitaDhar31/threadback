@@ -132,7 +132,7 @@ you type.
 a synced folder):
 
 - `projects/<slug>.json`: one plain, hand-editable file per project: summaries, next
-  step, tasks, decisions, and the auto-saved messages of chats that ended without a save.
+  step, tasks, decisions, and the auto-saved messages from chats after the last save.
 - `dashboard.html`, `hook-errors.log`, and `tb-path` (where the plugin is installed, for
   the optional panel).
 - On Windows, only if you turn on the welcome window: a login script and a desktop shortcut.

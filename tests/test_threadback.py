@@ -255,7 +255,7 @@ class PluginTests(TempHome):
         p = store.find("proj")
         self.assertEqual(p.get("auto_saves", []), [])
         self.assertEqual([c["session_id"] for c in p["pending_captures"]], ["s1"])
-        self.assertIn("ended without saving (1", self.run_cli("show", "proj"))
+        self.assertIn("with unsaved messages (1", self.run_cli("show", "proj"))
         p = store.find("proj")
         self.assertEqual(p["next_action"], "add login page")  # the user's plan is untouched
         self.assertEqual(p["auto_saves"][0]["asked"], ["fix the date picker"])

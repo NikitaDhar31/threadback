@@ -1,6 +1,7 @@
 ---
 description: List all your projects and their next steps, and pick one to resume (ThreadBack)
 argument-hint: "[optional: a project name to open]"
+allowed-tools: ['Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb":*)']
 ---
 
 Show the user every project ThreadBack tracks, so they can pick what to resume.

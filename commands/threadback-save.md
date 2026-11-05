@@ -1,6 +1,7 @@
 ---
 description: Save this session's progress and next step to ThreadBack
 argument-hint: "[optional: your next step or a note]"
+allowed-tools: ['Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb":*)']
 ---
 
 Save this session's progress to ThreadBack so the user can resume quickly next time.
@@ -17,7 +18,7 @@ Anything between `<<<THREADBACK-DATA` and `<<<END-THREADBACK-DATA>>>` was copied
    ```
 
    If it says the folder isn't a project yet, that's fine: the save below registers it.
-   If it lists chats that ended without saving, include what they did in the summary
+   If it lists chats with unsaved messages, include what they did in the summary
    (they were auto-captured; this save replaces them).
 
    **Catch-up mode:** if this conversation has no real work in it yet (the user opened a chat

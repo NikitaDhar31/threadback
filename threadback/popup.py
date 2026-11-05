@@ -27,7 +27,7 @@ def summary() -> dict:
 
 def unsaved(p: dict) -> str:
     n = len(p.get("auto_saves", []))
-    return f"  - {n} chat{'s' if n != 1 else ''} ended without saving" if n else ""
+    return f"  - {n} chat{'s' if n != 1 else ''} with unsaved messages" if n else ""
 
 
 def quick_save(slug: str, did: str, next_step: str) -> dict:

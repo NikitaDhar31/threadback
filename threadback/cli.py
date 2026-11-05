@@ -100,7 +100,7 @@ def brief(project: dict, ctx: dict) -> str:
         out.append(f"\nLast saved session ({s['date']}):\n  {s.get('summary') or '-'}")
     autos = p.get("auto_saves", [])
     if autos:
-        out.append(f"\nChats that ended without saving ({len(autos)}, auto-captured):")
+        out.append(f"\nChats with unsaved messages ({len(autos)}, auto-captured):")
         out.append(fence("\n".join(f"  - {a['date'][:16]}  last asked: {a['asked'][-1] if a['asked'] else '-'}"
                                     for a in autos[-3:])))
     if p["blockers"]:

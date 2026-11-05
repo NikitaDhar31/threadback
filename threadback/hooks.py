@@ -125,7 +125,7 @@ def capture_pending(p: dict) -> bool:
 
 
 def auto_capture(p: dict, payload: dict, keep: int = 10) -> bool:
-    """Chat ended without /threadback-save: keep a free trace of it (no AI). Only messages
+    """Chat ended with messages after the last save: keep a free trace of it (no AI). Only messages
     after the last real save count, so a chat that was saved and then ended adds nothing.
     Never touches the next step; the next real save clears these."""
     from . import digest
@@ -187,7 +187,7 @@ def brief_for_claude(p: dict, ctx: dict) -> str:
     # Copied from chats and git, not written for ThreadBack: fenced as data (see redact.fence).
     copied = []
     for a in p.get("auto_saves", [])[-3:]:
-        copied.append(f"- Chat ended without /threadback-save, {a['date'][:16]}, {a['messages']} "
+        copied.append(f"- Chat with messages after the last save, {a['date'][:16]}, {a['messages']} "
                       "message(s). Last asked: " + " / ".join(a["asked"])
                       + (f" | Claude's last answer: {a['last_answer']}" if a["last_answer"] else ""))
     if copied:
