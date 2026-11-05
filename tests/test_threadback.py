@@ -796,7 +796,9 @@ class SafeCommandTests(TempHome):
                                       f"{cd}; [Console]::OutputEncoding = [Text.Encoding]::UTF8; "
                                       "(Get-Location).ProviderPath"],
                                      capture_output=True, timeout=60)
-                self.assertEqual(ran.stdout.decode("utf-8").strip(), str(folder), ran.stderr)
+                # samefile: CI's temp folder is an 8.3 short path (RUNNER~1) that PowerShell expands
+                where = ran.stdout.decode("utf-8").strip()
+                self.assertTrue(where and os.path.samefile(where, folder), (where, ran.stderr))
 
 
 class LockTests(TempHome):
