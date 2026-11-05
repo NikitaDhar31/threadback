@@ -183,7 +183,15 @@ def cmd_list(a) -> None:
 
 def cmd_show(a) -> None:
     with store.lock():
-        p = resolve(a.name)
+        try:
+            p = resolve(a.name)
+        except LookupError as e:
+            if a.name:
+                raise
+            # A new folder is not an error: /threadback-save runs this first, and a failed
+            # step there looks like ThreadBack is broken.
+            print(e)
+            return
         if hooks.capture_pending(p):  # chats that ended since the project was last opened
             store.save(p)
     print(brief(p, context(p)))

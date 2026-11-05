@@ -347,6 +347,18 @@ class PluginTests(TempHome):
         self.assertEqual(store.find("brand-new")["next_action"], "set up repo")
         self.assertIn("NEXT ACTION: set up repo", self.run_cli("show"))
 
+    def test_show_in_new_folder_explains_without_failing(self):
+        # /threadback-save runs `show` first; a non-zero exit there shows as "Failed".
+        new_folder = self.tmp / "Fresh"
+        new_folder.mkdir()
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(new_folder)
+        self.assertIn("isn't a ThreadBack project yet", self.run_cli("show"))
+        self.assertEqual(store.load_all(), [])
+        with self.assertRaises(SystemExit):  # a named project that doesn't exist still fails
+            self.run_cli("show", "no-such-project")
+
     def test_register_refuses_home(self):
         with self.assertRaises(ValueError):
             store.register_folder(str(Path.home()))
