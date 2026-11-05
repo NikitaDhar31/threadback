@@ -1,7 +1,7 @@
 ---
 description: Save this session's progress and next step to ThreadBack
 argument-hint: "[optional: your next step or a note]"
-allowed-tools: ['Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb":*)']
+allowed-tools: ['Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" show:*)', 'Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" digest:*)', 'Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" save --json:*)']
 ---
 
 Save this session's progress to ThreadBack so the user can resume quickly next time.
