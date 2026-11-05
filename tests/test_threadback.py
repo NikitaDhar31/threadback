@@ -646,6 +646,22 @@ class NoPythonTests(unittest.TestCase):
         self.assertIn("python.org", shown.stderr)
 
 
+class GitBashPathTests(unittest.TestCase):
+    """scripts/tb started by a Git Bash style path ("/c/Users/...") still finds tb.py."""
+
+    def test_unix_style_path_to_tb(self):
+        import shutil
+        bash = shutil.which("bash")
+        if os.name != "nt" or not bash or "system32" in bash.lower():
+            self.skipTest("needs Git Bash on Windows")
+        tb = Path(__file__).resolve().parent.parent / "scripts" / "tb"
+        unix = "/" + tb.drive[0].lower() + tb.as_posix()[2:]
+        ran = subprocess.run([bash, unix, "--help"], capture_output=True, text=True,
+                             timeout=30)
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertNotIn("No such file", ran.stderr)
+
+
 class TaskEditTests(TempHome):
     """`tb task`, which the panel's buttons call."""
 

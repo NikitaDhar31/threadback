@@ -4,6 +4,11 @@ here="$(dirname "$0")"
 # Git Bash rewrites arguments that start with "/" into Windows paths
 # ("/threadback-next" -> "C:/Program Files/Git/threadback-next"); keep notes as typed.
 export MSYS2_ARG_CONV_EXCL="*"
+# With that off, a "/c/Users/..." path to this script would reach Windows' Python as
+# "D:\c\Users\...", so turn our own folder into a Windows path ourselves.
+if command -v cygpath >/dev/null 2>&1; then
+  here="$(cygpath -m "$here")"
+fi
 
 # Run each candidate rather than trusting `command -v`: Windows ships a "python"
 # that only opens the Microsoft Store, and an old Python 2 or 3.9 may be first on PATH.
