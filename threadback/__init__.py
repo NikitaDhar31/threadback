@@ -1,3 +1,3 @@
 """ThreadBack: personal AI work-context recovery."""
 
-__version__ = "0.7.13"
+__version__ = "0.7.14"

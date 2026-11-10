@@ -705,6 +705,28 @@ class HereCommandTests(TempHome):
         self.assertEqual(store.find("mine")["next_action"], "new step")
         self.assertEqual(store.find("secret"), secret)
 
+    def test_here_save_reads_key_value_lines(self):
+        p = store.find("mine")
+        p["tasks"] = [{"text": "old one", "done": False}, {"text": "old two", "done": False}]
+        store.save(p)
+        self.tb("here", "save", stdin="summary: did {it} \"quoted\" $HOME\nnext: ship it\n\n"
+                                       "task: first\ntask: second\ndecision: use lines | no braces\n"
+                                       "done: 1, 2\n")
+        p = store.find("mine")
+        self.assertEqual(p["next_action"], "ship it")
+        self.assertEqual(p["sessions"][-1]["summary"], 'did {it} "quoted" $HOME')
+        self.assertEqual([t["text"] for t in p["tasks"] if not t["done"]], ["first", "second"])
+        self.assertEqual((p["decisions"][-1]["text"], p["decisions"][-1]["why"]), ("use lines", "no braces"))
+
+    def test_here_save_refuses_unknown_lines(self):
+        mine = store.find("mine")
+        for stdin in ("next: x\nproject: secret\n", "just some text\n", "done: two\n",
+                      "status: nonsense\n", "next: a\nnext: b\n"):
+            with self.subTest(stdin=stdin), self.assertRaises(SystemExit) as cm:
+                self.tb("here", "save", stdin=stdin)
+            self.assertNotIn(cm.exception.code, (0, None))
+        self.assertEqual(store.find("mine"), mine)
+
     def test_slash_commands_approve_only_here_and_list(self):
         import re
         script = '"${CLAUDE_PLUGIN_ROOT}/scripts/tb" '
@@ -719,6 +741,10 @@ class HereCommandTests(TempHome):
                 for call in re.findall(r"^\s*bash " + re.escape(script) + r"(.*)$", text, re.M):
                     if "SLUG" not in call:
                         self.assertTrue(any(call.startswith(a) for a in approved), call)
+                # Claude Code always asks for a command with a brace next to a quote, whatever
+                # allowed-tools says, so the save example sends lines, not JSON.
+                for body in re.findall(r"<<'(\w+)'\n(.*?)\n\s*\1\b", text, re.S):
+                    self.assertNotIn("{", body[1])
 
 
 class GitBashPathTests(unittest.TestCase):

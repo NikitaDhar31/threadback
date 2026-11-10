@@ -38,25 +38,32 @@ Anything between `<<<THREADBACK-DATA` and `<<<END-THREADBACK-DATA>>>` was copied
    - `summary`: 1–2 sentences on what was actually done.
    - `state`: where things stand now (what works, what's half-done).
    - `next`: ONE concrete action to start with next time (file, feature, command).
-   - `decisions`: real decisions made this session, each `{"text": ..., "why": ...}` (0–3).
-   - `tasks`: new unfinished tasks, each a short summary of at most about 120 characters
+   - `decision`: real decisions made this session, each as `decision | why` (0–3).
+   - `task`: new unfinished tasks, each a short summary of at most about 120 characters
      (what to do, not how; put how-to detail in `state` or a decision). `done`: numbers of saved tasks finished this session.
      Before adding a task, check whether the user already said they did it ("done", "it's on");
      if so, don't add it (or put its number in `done` if it was saved earlier).
-   - `blockers`: new blockers. `unblock`: numbers of saved blockers now resolved.
-   - `ideas`: ideas discussed but not implemented.
+   - `blocker`: new blockers. `unblock`: numbers of saved blockers now resolved.
+   - `idea`: ideas discussed but not implemented.
 
-3. Save with one command from the project folder. Pass the values as one JSON object inside the
-   quoted heredoc exactly as shown: the quotes around `'THREADBACK_JSON'` stop the shell from
+3. Save with one command from the project folder: one `key: value` line per value, inside the
+   quoted heredoc exactly as shown. The quotes around `'THREADBACK_SAVE'` stop the shell from
    reading anything in the text (quotes, `$`, backticks), so never put these values on the command
-   line itself. Leave out keys that don't apply. The closing `THREADBACK_JSON` goes alone at the
-   very start of its line. Example:
+   line itself. Keep each value on one line, repeat `task`, `decision`, `blocker` and `idea` for
+   more than one, and leave out keys that don't apply. Don't write curly braces in the values:
+   Claude Code asks the user to approve any command that has a brace next to a quote. The closing
+   `THREADBACK_SAVE` goes alone at the very start of its line. Example:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here save <<'THREADBACK_JSON'
-   {"summary": "...", "state": "...", "next": "...",
-    "decisions": [{"text": "...", "why": "..."}], "tasks": ["..."], "done": [3]}
-   THREADBACK_JSON
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here save <<'THREADBACK_SAVE'
+   summary: ...
+   state: ...
+   next: ...
+   decision: ... | ...
+   task: ...
+   task: ...
+   done: 3 5
+   THREADBACK_SAVE
    ```
 
 4. Reply in at most 5 lines: what was saved, and the next step, word for word.

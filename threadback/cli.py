@@ -214,11 +214,42 @@ def _json_item(key: str, attr: str, item) -> str:
     raise ValueError(f'--json: each of {key} must be text or {{"{first}": ..., "{second}": ...}}')
 
 
-def _read_json_save(a) -> None:
+_LINE_KEYS = {"summary": "summary", "state": "state", "next": "next", "status": "status",
+              "decision": "decision", "task": "task", "done": "done", "blocker": "blocker",
+              "unblock": "unblock", "idea": "idea", "link": "link"}
+
+
+def _read_lines_save(a, text: str) -> None:
+    """Fill the save options from 'key: value' lines (list keys may repeat). /threadback-save
+    sends these: Claude Code always asks before a command holding JSON's brace-and-quote."""
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        key, sep, value = line.partition(":")
+        key, value = key.strip().lower(), value.strip()
+        if not sep or key not in _LINE_KEYS:
+            raise ValueError(f"line {n}: expected 'key: value' with key one of {', '.join(_LINE_KEYS)}")
+        attr = _LINE_KEYS[key]
+        if attr in ("summary", "state", "next", "status"):
+            if getattr(a, attr):
+                raise ValueError(f"line {n}: {key} given twice")
+            setattr(a, attr, value)
+        elif attr in ("done", "unblock"):
+            nums = value.replace(",", " ").split()
+            if not all(x.isdigit() for x in nums):
+                raise ValueError(f"line {n}: {key} must be task numbers, e.g. '{key}: 2 5'")
+            setattr(a, attr, (getattr(a, attr) or []) + [int(x) for x in nums])
+        elif value:
+            setattr(a, attr, (getattr(a, attr) or []) + [value])
+    if a.status and a.status not in store.STATUSES:
+        raise ValueError(f"status must be one of {', '.join(store.STATUSES)}")
+
+
+def _read_json_save(a, text: str | None = None) -> None:
     """Fill the save options from JSON on stdin. Slash commands pass text written from the
     chat this way, through a quoted heredoc, so nothing in it can reach a shell."""
     try:
-        data = json.loads(sys.stdin.read() or "{}")
+        data = json.loads((sys.stdin.read() if text is None else text) or "{}")
     except json.JSONDecodeError as e:
         raise ValueError(f"--json: stdin is not valid JSON ({e})")
     if not isinstance(data, dict):
@@ -367,7 +398,8 @@ def cmd_digest(a) -> None:
 def cmd_here(a) -> None:
     """The slash commands' only entry point, approved in their allowed-tools. It takes no
     project name and no save flags, so planted text can't point an approved call at another
-    project or widen what it does: this folder's project only, save values as JSON on stdin."""
+    project or widen what it does: this folder's project only, save values on stdin as
+    'key: value' lines (or one JSON object)."""
     if a.all and a.action != "digest":
         raise ValueError("--all is for 'here digest' only.")
     if a.action == "show":
@@ -375,7 +407,13 @@ def cmd_here(a) -> None:
     elif a.action == "digest":
         cmd_digest(argparse.Namespace(name=None, all=a.all, chats=4))
     else:
-        cmd_save(argparse.Namespace(name=None, json=True, **{k: None for k in _SAVE_FLAGS}))
+        save = argparse.Namespace(name=None, json=False, **{k: None for k in _SAVE_FLAGS})
+        text = sys.stdin.read()
+        if text.lstrip().startswith("{"):
+            _read_json_save(save, text)
+        else:
+            _read_lines_save(save, text)
+        cmd_save(save)
 
 
 _SAVE_FLAGS = ("summary", "state", "next", "decision", "task", "done", "blocker", "unblock",
@@ -520,7 +558,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("here", allow_abbrev=False,
                        help="this folder's project only, for the slash commands: show, "
-                            "digest [--all], or save (JSON on stdin)")
+                            "digest [--all], or save (key: value lines or JSON on stdin)")
     s.add_argument("action", choices=["show", "digest", "save"])
     s.add_argument("--all", action="store_true", help="digest: ignore the last save")
     s.set_defaults(fn=cmd_here)
