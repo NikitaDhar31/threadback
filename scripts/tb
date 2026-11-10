@@ -1,38 +1,40 @@
 #!/usr/bin/env bash
+# Every line ends in a comment, so the CR a Windows checkout adds to each line (no
+# .gitattributes: the plugin directory refuses one) is a comment and bash ignores it.
 # Pick a Python 3.10+ interpreter (Windows "py" launcher first) and run ThreadBack.
-here="$(dirname "$0")"
+here="$(dirname "$0")" #
 # Git Bash rewrites arguments that start with "/" into Windows paths
 # ("/threadback-next" -> "C:/Program Files/Git/threadback-next"); keep notes as typed.
-export MSYS2_ARG_CONV_EXCL="*"
+export MSYS2_ARG_CONV_EXCL="*" #
 # With that off, a "/c/Users/..." path to this script would reach Windows' Python as
 # "D:\c\Users\...", so turn our own folder into a Windows path ourselves.
-if command -v cygpath >/dev/null 2>&1; then
-  here="$(cygpath -m "$here")"
-fi
-
+if command -v cygpath >/dev/null 2>&1; then #
+  here="$(cygpath -m "$here")" #
+fi #
+#
 # Run each candidate rather than trusting `command -v`: Windows ships a "python"
 # that only opens the Microsoft Store, and an old Python 2 or 3.9 may be first on PATH.
 # tb.py checks the version itself and exits 86 when it's too old, so a working Python
 # starts once (session end has 1.5 s in all). The other codes mean "this one doesn't run":
 # 103 py found no Python 3, 9009 the Store stub, 126/127 not runnable or not found.
-for python in "py -3" python3 python; do
-  command -v "${python%% *}" >/dev/null 2>&1 || continue
-  $python "$here/tb.py" "$@"
-  status=$?
-  case $status in
-    86|103|126|127|9009) ;;
-    *) exit $status ;;
-  esac
-done
-
+for python in "py -3" python3 python; do #
+  command -v "${python%% *}" >/dev/null 2>&1 || continue #
+  $python "$here/tb.py" "$@" #
+  status=$? #
+  case $status in #
+    86|103|126|127|9009) ;; #
+    *) exit $status ;; #
+  esac #
+done #
+#
 # No usable Python. Hook output is otherwise dropped, so say it where it is seen:
 # at session start as a message to the user (and to Claude), elsewhere on stderr.
-msg="ThreadBack needs Python 3.10 or newer and could not find it, so it is not saving or showing project context. Install Python from https://www.python.org/downloads/ (on Windows, tick 'Add python.exe to PATH'), then restart Claude."
-if [ "$1" = hook ]; then
-  if [ "$2" = session-start ]; then
-    printf '{"systemMessage": "%s", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "%s If the user asks about ThreadBack, tell them this."}}\n' "$msg" "$msg"
-  fi
-  exit 0  # never block or break a session over it
-fi
-echo "$msg" >&2
-exit 1
+msg="ThreadBack needs Python 3.10 or newer and could not find it, so it is not saving or showing project context. Install Python from https://www.python.org/downloads/ (on Windows, tick 'Add python.exe to PATH'), then restart Claude." #
+if [ "$1" = hook ]; then #
+  if [ "$2" = session-start ]; then #
+    printf '{"systemMessage": "%s", "hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "%s If the user asks about ThreadBack, tell them this."}}\n' "$msg" "$msg" #
+  fi #
+  exit 0  # never block or break a session over it #
+fi #
+echo "$msg" >&2 #
+exit 1 #

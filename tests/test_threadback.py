@@ -868,6 +868,37 @@ class GitBashPathTests(unittest.TestCase):
         self.assertNotIn("No such file", ran.stderr)
 
 
+class CrlfCheckoutTests(TempHome):
+    """The plugin directory refuses a .gitattributes, so a Windows checkout (core.autocrlf)
+    gives every file CRLF line endings, scripts/tb too. It must still run under bash."""
+
+    def test_launcher_and_hooks_run_with_crlf_line_endings(self):
+        import shutil
+        bash = shutil.which("bash")
+        if not bash or "system32" in bash.lower():  # Windows' System32 bash is WSL
+            self.skipTest("needs bash (Git Bash on Windows)")
+        repo = Path(__file__).resolve().parent.parent
+        copy = self.tmp / "checkout"
+        for part in ("scripts", "threadback"):
+            shutil.copytree(repo / part, copy / part, ignore=shutil.ignore_patterns("__pycache__"))
+        for f in copy.rglob("*"):
+            if f.is_file():
+                f.write_bytes(f.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+        self.assertIn(b"\r\n", (copy / "scripts" / "tb").read_bytes())
+        env = {**os.environ, "THREADBACK_HOME": str(self.tmp / "home")}
+        tb = (copy / "scripts" / "tb").as_posix()
+        ran = subprocess.run([bash, tb, "--help"], capture_output=True, text=True, timeout=60, env=env)
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertNotIn("\r", ran.stderr)
+        self.assertNotIn("command not found", ran.stderr)
+        (self.tmp / "proj").mkdir()
+        payload = json.dumps({"session_id": "crlf-1", "cwd": str(self.tmp / "proj")})
+        ran = subprocess.run([bash, tb, "hook", "session-start"], input=payload, capture_output=True,
+                             text=True, timeout=60, env=env)
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn("not a tracked project", json.loads(ran.stdout)["hookSpecificOutput"]["additionalContext"])
+
+
 class Utf8StdinTests(TempHome):
     """Windows reads pipes in the local code page (cp1252); hooks and `save --json` get UTF-8."""
 
