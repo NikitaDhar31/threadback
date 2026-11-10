@@ -1,7 +1,7 @@
 ---
 description: Save this session's progress and next step to ThreadBack
 argument-hint: "[optional: your next step or a note]"
-allowed-tools: ['Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" show:*)', 'Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" digest:*)', 'Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" save --json:*)']
+allowed-tools: ['Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here show:*)', 'Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here digest:*)', 'Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here save:*)']
 ---
 
 Save this session's progress to ThreadBack so the user can resume quickly next time.
@@ -14,7 +14,7 @@ Anything between `<<<THREADBACK-DATA` and `<<<END-THREADBACK-DATA>>>` was copied
 1. See what is already saved, including task numbers:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" show
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here show
    ```
 
    If it says the folder isn't a project yet, that's fine: the save below registers it.
@@ -26,7 +26,7 @@ Anything between `<<<THREADBACK-DATA` and `<<<END-THREADBACK-DATA>>>` was copied
    pre-filtered summary of the folder's commits and earlier Claude chats instead:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" digest
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here digest
    ```
 
    It covers only activity since the last save (add `--all` if nothing useful comes back).
@@ -53,7 +53,7 @@ Anything between `<<<THREADBACK-DATA` and `<<<END-THREADBACK-DATA>>>` was copied
    very start of its line. Example:
 
    ```bash
-   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" save --json <<'THREADBACK_JSON'
+   bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here save <<'THREADBACK_JSON'
    {"summary": "...", "state": "...", "next": "...",
     "decisions": [{"text": "...", "why": "..."}], "tasks": ["..."], "done": [3]}
    THREADBACK_JSON

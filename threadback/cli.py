@@ -364,6 +364,24 @@ def cmd_digest(a) -> None:
     print(digest.build(folder, since, n_chats=a.chats))
 
 
+def cmd_here(a) -> None:
+    """The slash commands' only entry point, approved in their allowed-tools. It takes no
+    project name and no save flags, so planted text can't point an approved call at another
+    project or widen what it does: this folder's project only, save values as JSON on stdin."""
+    if a.all and a.action != "digest":
+        raise ValueError("--all is for 'here digest' only.")
+    if a.action == "show":
+        cmd_show(argparse.Namespace(name=None))
+    elif a.action == "digest":
+        cmd_digest(argparse.Namespace(name=None, all=a.all, chats=4))
+    else:
+        cmd_save(argparse.Namespace(name=None, json=True, **{k: None for k in _SAVE_FLAGS}))
+
+
+_SAVE_FLAGS = ("summary", "state", "next", "decision", "task", "done", "blocker", "unblock",
+               "idea", "status", "link")
+
+
 def cmd_link(a) -> None:
     with store.lock():
         _link(store.find(a.name), a)
@@ -499,6 +517,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--all", action="store_true", help="ignore the last save; summarize everything recent")
     s.add_argument("--chats", type=int, default=4, help="how many recent Claude chats to include")
     s.set_defaults(fn=cmd_digest)
+
+    s = sub.add_parser("here", allow_abbrev=False,
+                       help="this folder's project only, for the slash commands: show, "
+                            "digest [--all], or save (JSON on stdin)")
+    s.add_argument("action", choices=["show", "digest", "save"])
+    s.add_argument("--all", action="store_true", help="digest: ignore the last save")
+    s.set_defaults(fn=cmd_here)
 
     s = sub.add_parser("link", help="add/replace a link (ChatGPT, Claude, repo...), or set 'folder'")
     s.add_argument("name")

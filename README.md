@@ -160,6 +160,13 @@ branch and commit names, chat titles), it is fenced between markers that tell Cl
 information only and never instructions to follow. This makes planted instructions far
 less likely to work, though no marker can guarantee that a model ignores them.
 
+**What runs without asking:** so you aren't asked to approve every step, `/threadback` and
+`/threadback-save` may run `tb here show`, `tb here digest` and `tb here save` without a
+prompt, and `/threadback-all` may run `tb list --slugs`. `tb here` reaches only the project
+for the current folder and accepts no other options, so even planted text can't use it to
+read or change another project. Anything else, such as opening another project by name in
+`/threadback-all`, asks first as usual.
+
 ## Command line
 
 Everything also works from a terminal, without Claude. From a clone of this repo

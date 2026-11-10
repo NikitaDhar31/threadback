@@ -658,6 +658,69 @@ class NoPythonTests(unittest.TestCase):
         self.assertIn("python.org", shown.stderr)
 
 
+class HereCommandTests(TempHome):
+    """`tb here` is the only tb call the slash commands approve (allowed-tools). Planted text
+    must not be able to point it at another project or widen what it does (final check, round 8)."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("Mine", "Secret"):
+            folder = self.tmp / name.lower()
+            folder.mkdir()
+            p = store.new_project(name, folder=str(folder))
+            p["next_action"] = f"{name.upper()}-NEXT"
+            store.save(p)
+        (self.tmp / "secret" / "README.md").write_text("SECRET-README\n", encoding="utf-8")
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(self.tmp / "mine")
+
+    def tb(self, *argv, stdin=""):
+        out = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(stdin)), redirect_stdout(out), \
+                mock.patch("sys.stderr", io.StringIO()):
+            cli.main(list(argv))
+        return out.getvalue()
+
+    def test_other_projects_and_extra_options_are_refused(self):
+        secret = store.find("secret")
+        for argv in (["here", "show", "secret"], ["here", "digest", "secret"],
+                     ["here", "digest", "secret", "--all"], ["here", "save", "secret"],
+                     ["here", "save", "--summary", "x"], ["here", "save", "--json"],
+                     ["here", "save", "--next", "x"], ["here", "show", "--al"],
+                     ["here", "show", "--all"], ["here", "save", "--all"]):
+            with self.subTest(argv=argv), self.assertRaises(SystemExit) as cm:
+                self.tb(*argv, stdin='{"next": "HIJACKED"}')
+            self.assertNotIn(cm.exception.code, (0, None))
+        self.assertEqual(store.find("secret"), secret)
+        self.assertEqual(store.find("mine")["next_action"], "MINE-NEXT")
+
+    def test_here_reads_and_saves_only_this_folders_project(self):
+        secret = store.find("secret")
+        shown = self.tb("here", "show")
+        self.assertIn("MINE-NEXT", shown)
+        self.assertNotIn("SECRET", shown)
+        self.assertNotIn("SECRET", self.tb("here", "digest", "--all"))
+        self.tb("here", "save", stdin=json.dumps({"next": "new step"}))
+        self.assertEqual(store.find("mine")["next_action"], "new step")
+        self.assertEqual(store.find("secret"), secret)
+
+    def test_slash_commands_approve_only_here_and_list(self):
+        import re
+        script = '"${CLAUDE_PLUGIN_ROOT}/scripts/tb" '
+        for md in sorted((Path(__file__).resolve().parent.parent / "commands").glob("*.md")):
+            text = md.read_text(encoding="utf-8")
+            approved = re.findall(r"Bash\(bash " + re.escape(script) + r"([^:)]*):\*\)", text)
+            with self.subTest(command=md.name):
+                self.assertTrue(set(approved) <= {"here show", "here digest", "here save", "list --slugs"},
+                                approved)
+                self.assertNotIn("Bash(*)", text)
+                # Every tb call these commands make without a project name is one that's approved
+                for call in re.findall(r"^\s*bash " + re.escape(script) + r"(.*)$", text, re.M):
+                    if "SLUG" not in call:
+                        self.assertTrue(any(call.startswith(a) for a in approved), call)
+
+
 class GitBashPathTests(unittest.TestCase):
     """scripts/tb started by a Git Bash style path ("/c/Users/...") still finds tb.py."""
 
