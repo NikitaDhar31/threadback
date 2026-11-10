@@ -32,6 +32,10 @@ The panel opens beside the chat. Run `/threadback-panel` to open it again after 
   with your Python. That file comes from the installed `threadback` plugin, which writes its
   location to `~/.threadback/tb-path`. The panel runs it only if it is inside Claude Code's
   plugins folder, and starts it in that file's own folder, never the project's.
+- **Watches** Claude's Bash commands, without changing them: when a finished one mentions
+  ThreadBack (such as `/threadback-save`), the panel re-reads the project files and redraws.
+  It doesn't keep or pass on the commands or their output.
+- **Adds** one command, `/threadback-panel`, which reopens the panel.
 - **Sends** nothing: no network requests, no AI calls. What the panel shows stays in the panel.
 
 ## License
