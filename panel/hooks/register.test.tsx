@@ -32,12 +32,18 @@ const SAVED: Record<string, object> = {
   },
 }
 
+const TB = 'C:/Users/me/.claude/plugins/cache/threadback/threadback/0.7.16/scripts/tb.py'
+const ENV: Record<string, string> = { THREADBACK_HOME: 'C:/Users/me/.threadback', USERPROFILE: 'C:/Users/me' }
+
 // Nothing sits beneath the plugin: each hook here stands for the engine.
-// `runs` collects the commands the panel's buttons ran.
+// `runs` collects the commands the panel's buttons ran; `seen` what else it did.
+type Seen = { reads: string[]; cwds: (string | undefined)[] }
 function engine(on: any, cwd: string, runs: string[][] = [], answer = { exitCode: 0, stdout: 'ok', stderr: '' },
-                saved: Record<string, object> = SAVED, links: Record<string, string> = {}) {
+                saved: Record<string, object> = SAVED, links: Record<string, string> = {},
+                over: { env?: Record<string, string>; tbPath?: string } = {}, seen: Seen = { reads: [], cwds: [] }) {
+  const env: Record<string, string> = { ...ENV, ...over.env }
   // $.fs.stat with resolve: where a path really lands (links followed); others stay as given.
-  // A test host on Windows makes '/work/app' absolute as 'D:\work\app' before this hook sees
+  // A test host on Windows makes '/work/app' absolute as 'D:\\work\\app' before this hook sees
   // it; for a Mac/Linux path the mock answers as a Mac would, with the path as it was.
   const posix = cwd.startsWith('/')
   on('fs.stat', (_: unknown, e: { path: string }) => {
@@ -49,21 +55,23 @@ function engine(on: any, cwd: string, runs: string[][] = [], answer = { exitCode
   on('clock.every', () => ({ value: undefined }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: cwd }))
-  on('env.get', (_: unknown, e: { name: string }) => ({
-    value: e.name === 'THREADBACK_HOME' ? 'H' : undefined,
-  }))
+  on('env.get', (_: unknown, e: { name: string }) => ({ value: env[e.name] }))
   on('fs.exists', () => ({ value: true }))
   on('fs.list', () => ({
     value: Object.keys(saved).map(name => ({ name, kind: 'file', size: 1, mtimeMs: 0, isLink: false })),
   }))
-  on('fs.read', (_: unknown, e: { path: string }) => ({
-    value: e.path.endsWith('tb-path')
-      ? 'C:/plugins/threadback/scripts/tb.py\n'
-      : JSON.stringify(saved[Object.keys(saved).find(name => e.path.endsWith(name)) as string]),
-  }))
-  on('process.run', (_: unknown, e: { argv: string[] }) => {
+  on('fs.read', (_: unknown, e: { path: string }) => {
+    seen.reads.push(e.path)
+    return {
+      value: e.path.endsWith('tb-path')
+        ? `${over.tbPath ?? TB}\n`
+        : JSON.stringify(saved[Object.keys(saved).find(name => e.path.endsWith(name)) as string]),
+    }
+  })
+  on('process.run', (_: unknown, e: { argv: string[]; init?: { cwd?: string } }) => {
     if (e.argv[0] === 'py') throw new Error('py not installed') // falls back to python3
     runs.push([...e.argv])
+    seen.cwds.push(e.init?.cwd)
     return { value: answer }
   })
 }
@@ -149,7 +157,7 @@ test('buttons and the add box edit tasks through tb.py', async ($, on) => {
     await ui.press({ key: 'remove-2' })
     await ui.input({ key: 'add', text: '  Write docs ' })
     const tail = ['--project', 'my-app']
-    const tb = ['python3', 'C:/plugins/threadback/scripts/tb.py', 'task']
+    const tb = ['python3', TB, 'task']
     expect(runs).toEqual([
       [...tb, 'done', '2', ...tail],
       [...tb, 'next', '2', ...tail],
@@ -193,5 +201,53 @@ test('a failed edit shows why', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await ui.press({ key: 'done-2' })
   expect((await ui.find({ type: 'Text', text: /No task number/ }))?.text).toBe('No task number 2 in My App.')
+  await ui.unmount()
+})
+
+test('tb.py runs from its own folder, never from the project folder', async ($, on) => {
+  // Windows finds `py` / `python3` in the current folder first, and a project could ship one.
+  const seen: Seen = { reads: [], cwds: [] }
+  engine(on, 'D:\\work\\app', [], undefined, SAVED, {}, {}, seen)
+  await $.session.start({ cwd: 'D:\\work\\app', surface: 'desktop', isInteractive: true })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'done-2' })
+  expect(seen.cwds).toEqual([TB.replace(/\/tb\.py$/, '')])
+  await ui.unmount()
+})
+
+// tb-path sits in the data folder; a project must not be able to name what runs.
+for (const tbPath of ['D:/work/app/evil/scripts/tb.py', 'C:/Users/me/.claude/plugins/../x/scripts/tb.py',
+                      'C:/Users/me/.claude/plugins/cache/x/evil.py', 'scripts/tb.py']) {
+  test(`a tb-path outside Claude Code's plugins folder is never run: ${tbPath}`, async ($, on) => {
+    const runs: string[][] = []
+    engine(on, 'D:\\work\\app', runs, undefined, SAVED, {}, { tbPath })
+    await $.session.start({ cwd: 'D:\\work\\app', surface: 'desktop', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: 'done-2' })
+    expect(runs).toEqual([])
+    expect(await ui.find({ type: 'Text', text: /won't run it/ })).toBeDefined()
+    await ui.unmount()
+  })
+}
+
+// A project's own .claude/settings.json can set THREADBACK_HOME for the session.
+test('a relative THREADBACK_HOME is ignored', async ($, on) => {
+  const seen: Seen = { reads: [], cwds: [] }
+  engine(on, 'D:\\work\\app', [], undefined, SAVED, {}, { env: { THREADBACK_HOME: '.tb' } }, seen)
+  await $.session.start({ cwd: 'D:\\work\\app', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(seen.reads.length).toBeGreaterThan(0)
+  expect(seen.reads.filter(path => !path.replace(/\\/g, '/').startsWith('C:/Users/me/.threadback/'))).toEqual([])
+  await ui.unmount()
+})
+
+test('a THREADBACK_HOME inside the project is not read', async ($, on) => {
+  const seen: Seen = { reads: [], cwds: [] }
+  engine(on, 'D:\\work\\app', [], undefined, SAVED, {}, { env: { THREADBACK_HOME: 'D:/work/app/.tb' } }, seen)
+  await $.session.start({ cwd: 'D:\\work\\app', surface: 'desktop', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(seen.reads).toEqual([])
+  expect(await ui.find({ type: 'Text', text: /isn't a ThreadBack project/ })).toBeDefined()
   await ui.unmount()
 })

@@ -54,19 +54,42 @@ async function real($: EngineInterface, path: string): Promise<string> {
   return norm(stat?.realPath ?? path)
 }
 
+const isAbsolute = (path: string) => path.startsWith('/') || isWindowsPath(path)
+
+/** `path` is `folder` or inside it, compared as norm() spells them. */
+function inside(path: string, folder: string): boolean {
+  const a = norm(path)
+  const b = norm(folder)
+  return a === b || a.startsWith(b + (isWindowsPath(folder) ? '\\' : '/'))
+}
+
+async function userHome($: EngineInterface): Promise<string> {
+  return (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
+}
+
+/** ThreadBack's data folder. A project's own .claude/settings.json can set THREADBACK_HOME
+ *  for the session, so only an absolute one counts, as in the core's store.env_dir. */
 async function dataDir($: EngineInterface): Promise<string> {
   const own = await $.env.get('THREADBACK_HOME')
-  if (own) return own
-  const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME')) ?? ''
-  return `${home}/.threadback`
+  if (own && isAbsolute(own)) return own
+  return `${await userHome($)}/.threadback`
+}
+
+/** Where Claude Code installs plugins. The panel only runs a tb.py from there: tb-path sits
+ *  in the data folder, and a file a project could write must never name what runs. */
+async function pluginsDir($: EngineInterface): Promise<string> {
+  const own = await $.env.get('CLAUDE_CONFIG_DIR')
+  return `${own && isAbsolute(own) ? own : `${await userHome($)}/.claude`}/plugins`
 }
 
 /** The saved project whose folder is the session's folder or holds it (deepest wins),
  *  the same rule as ThreadBack's own find_by_folder. */
 async function load($: EngineInterface): Promise<ProjectView | null> {
-  const dir = `${await dataDir($)}/projects`
-  if (!(await $.fs.exists(dir))) return null
+  const data = await dataDir($)
+  const dir = `${data}/projects`
   const cwd = await real($, await $.session.cwd())
+  // A data folder inside this project is one the project could have filled: show nothing.
+  if (inside(await real($, data), cwd) || !(await $.fs.exists(dir))) return null
   let best: Saved | null = null
   let bestFolder = ''
   for (const entry of await $.fs.list(dir)) {
@@ -112,10 +135,18 @@ async function act($: EngineInterface, slug: string, action: Action, arg: string
     await update($, error, () => 'Open a new chat once so ThreadBack can tell the panel where it is installed.')
     return
   }
+  if (!isAbsolute(tb) || /(^|[\\/])\.\.([\\/]|$)/.test(tb) || !/[\\/]scripts[\\/]tb\.py$/.test(tb) ||
+      !inside(await real($, tb), await real($, await pluginsDir($)))) {
+    await update($, error, () => "ThreadBack's tb.py isn't in Claude Code's plugins folder, so the panel won't run it.")
+    return
+  }
   for (const python of [['py', '-3'], ['python3'], ['python']]) {
     let ran
     try {
+      // Started in tb.py's own folder, not the session's: Windows looks for `py` or
+      // `python3` in the current folder first, and a project could ship one.
       ran = await $.process.run([...python, tb, 'task', action, arg, '--project', slug], {
+        cwd: tb.replace(/[\\/]tb\.py$/, ''),
         timeoutMs: 20_000,
       })
     } catch {
