@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "threadback"
-version = "0.7.14"
+version = "0.7.15"
 description = "Pick up any project where you left off, with the next step you planned (Claude Code plugin)"
 requires-python = ">=3.10"
 license = { text = "MIT" }

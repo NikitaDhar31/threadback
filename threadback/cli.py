@@ -398,10 +398,24 @@ def cmd_digest(a) -> None:
 def cmd_here(a) -> None:
     """The slash commands' only entry point, approved in their allowed-tools. It takes no
     project name and no save flags, so planted text can't point an approved call at another
-    project or widen what it does: this folder's project only, save values on stdin as
-    'key: value' lines (or one JSON object)."""
+    project or widen what it does: the project for the folder this Claude Code session
+    started in, save values on stdin as 'key: value' lines (or one JSON object).
+
+    That folder comes from the SessionStart hook, never from the shell's current folder:
+    Claude may `cd` into a subfolder without asking, and a project nested in this one, or
+    in an added working directory, must stay out of reach."""
     if a.all and a.action != "digest":
         raise ValueError("--all is for 'here digest' only.")
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    root = store.session_root(session_id) if session_id else None
+    if not root:
+        raise LookupError("ThreadBack can't tell which folder this Claude Code chat started in "
+                          "(no SessionStart record for it), so 'tb here' won't guess. Start a new "
+                          "chat in the project folder, or run 'tb show' / 'tb save' in a terminal.")
+    try:
+        os.chdir(root)
+    except OSError as e:
+        raise LookupError(f"This chat's folder {root} can't be opened: {e.strerror}")
     if a.action == "show":
         cmd_show(argparse.Namespace(name=None))
     elif a.action == "digest":

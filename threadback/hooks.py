@@ -74,6 +74,9 @@ def note_tb_path() -> None:
 
 def session_start(payload: dict) -> dict:
     note_tb_path()
+    if payload.get("session_id") and payload.get("cwd"):
+        # The folder Claude Code started in, for `tb here`: the shell's own folder can change.
+        store.record_session_root(payload["session_id"], payload["cwd"])
     p = _project_for(payload)
     if p is None:
         text = ("ThreadBack: this folder is not a tracked project. If the user wants to track it, "

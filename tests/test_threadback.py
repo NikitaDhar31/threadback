@@ -660,20 +660,37 @@ class NoPythonTests(unittest.TestCase):
 
 class HereCommandTests(TempHome):
     """`tb here` is the only tb call the slash commands approve (allowed-tools). Planted text
-    must not be able to point it at another project or widen what it does (final check, round 8)."""
+    must not be able to point it at another project or widen what it does (final checks, rounds
+    8 and 9). The chat starts in "mine"; "secret" is a sibling (like an added working directory)
+    and "inner" is a project nested inside "mine", where Claude may `cd` without asking."""
+
+    SESSION = "11111111-2222-3333-4444-555555555555"
 
     def setUp(self):
         super().setUp()
-        for name in ("Mine", "Secret"):
-            folder = self.tmp / name.lower()
+        for name, rel in (("Mine", "mine"), ("Secret", "secret"), ("Inner", "mine/inner")):
+            folder = self.tmp / rel
             folder.mkdir()
             p = store.new_project(name, folder=str(folder))
             p["next_action"] = f"{name.upper()}-NEXT"
             store.save(p)
-        (self.tmp / "secret" / "README.md").write_text("SECRET-README\n", encoding="utf-8")
+            (folder / "README.md").write_text(f"{name.upper()}-README\n", encoding="utf-8")
         cwd = os.getcwd()
         self.addCleanup(os.chdir, cwd)
         os.chdir(self.tmp / "mine")
+        env = mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": self.SESSION})
+        env.start()
+        self.addCleanup(env.stop)
+        # What Claude Code sends when the chat starts: the hook records the chat's folder.
+        self.hook_start(str(self.tmp / "mine"), self.SESSION)
+
+    def hook_start(self, cwd, session_id):
+        with mock.patch("sys.stdin", io.StringIO(json.dumps({"session_id": session_id, "cwd": cwd}))), \
+                redirect_stdout(io.StringIO()):
+            cli.main(["hook", "session-start"])
+
+    def others(self):
+        return store.find("secret"), store.find("inner")
 
     def tb(self, *argv, stdin=""):
         out = io.StringIO()
@@ -696,14 +713,59 @@ class HereCommandTests(TempHome):
         self.assertEqual(store.find("mine")["next_action"], "MINE-NEXT")
 
     def test_here_reads_and_saves_only_this_folders_project(self):
-        secret = store.find("secret")
+        others = self.others()
         shown = self.tb("here", "show")
         self.assertIn("MINE-NEXT", shown)
         self.assertNotIn("SECRET", shown)
         self.assertNotIn("SECRET", self.tb("here", "digest", "--all"))
         self.tb("here", "save", stdin=json.dumps({"next": "new step"}))
         self.assertEqual(store.find("mine")["next_action"], "new step")
-        self.assertEqual(store.find("secret"), secret)
+        self.assertEqual(self.others(), others)
+
+    def test_cd_into_a_nested_or_other_project_still_reaches_only_the_chats_project(self):
+        # Round 9: `cd inner && tb here show` needs no prompt, as inner is inside the chat's
+        # folder. The same for an added working directory (secret). tb here must ignore it.
+        others = self.others()
+        for folder in (self.tmp / "mine" / "inner", self.tmp / "secret"):
+            with self.subTest(cd=folder.name):
+                os.chdir(folder)
+                shown = self.tb("here", "show")
+                self.assertTrue(shown.startswith("== Mine "), shown[:80])
+                self.assertNotIn("INNER", shown)
+                self.assertNotIn("SECRET", shown)
+                digest = self.tb("here", "digest", "--all")
+                self.assertIn("MINE-README", digest)
+                self.assertNotIn("INNER-README", digest)
+                self.assertNotIn("SECRET-README", digest)
+                self.tb("here", "save", stdin=f"next: saved from {folder.name}\n")
+                self.assertEqual(store.find("mine")["next_action"], f"saved from {folder.name}")
+                self.assertEqual(self.others(), others)
+
+    def test_a_chat_started_in_the_nested_project_gets_that_project(self):
+        session = "99999999-2222-3333-4444-555555555555"
+        self.hook_start(str(self.tmp / "mine" / "inner"), session)
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": session}):
+            shown = self.tb("here", "show")
+        self.assertIn("INNER-NEXT", shown)
+        self.assertNotIn("MINE-NEXT", shown)
+
+    def test_without_a_recorded_session_here_refuses(self):
+        before = store.load_all()
+        for env in ({"CLAUDE_CODE_SESSION_ID": ""}, {"CLAUDE_CODE_SESSION_ID": "not-a-recorded-chat"}):
+            for argv in (["here", "show"], ["here", "digest"], ["here", "save"]):
+                with self.subTest(env=env, argv=argv), mock.patch.dict(os.environ, env), \
+                        self.assertRaises(SystemExit) as cm:
+                    self.tb(*argv, stdin="next: HIJACKED\n")
+                self.assertIn("won't guess", str(cm.exception.code))
+        self.assertEqual(store.load_all(), before)
+
+    def test_session_roots_stay_private_and_bounded(self):
+        for i in range(store.SESSION_ROOTS_KEEP + 5):
+            store.record_session_root(f"s{i}", str(self.tmp / "mine"))
+        roots = json.loads((store.home() / "session-roots.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(roots), store.SESSION_ROOTS_KEEP)
+        if os.name != "nt":
+            self.assertEqual((store.home() / "session-roots.json").stat().st_mode & 0o777, 0o600)
 
     def test_here_save_reads_key_value_lines(self):
         p = store.find("mine")

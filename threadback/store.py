@@ -152,12 +152,17 @@ def save(project: dict) -> Path:
     project.update(redact_obj(project))  # never write a pasted key to disk
     project["updated"] = now()
     p = path_for(project["slug"])
+    _write_private(p, json.dumps(project, indent=2, ensure_ascii=False))
+    return p
+
+
+def _write_private(p: Path, text: str) -> None:
     # A temp file of its own, so two writers never share one; replace() swaps it in whole.
-    tmp = p.parent / f".{project['slug']}.{os.getpid()}.{time.monotonic_ns()}.tmp"
+    tmp = p.parent / f".{p.stem}.{os.getpid()}.{time.monotonic_ns()}.tmp"
     fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)  # private to the user
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(json.dumps(project, indent=2, ensure_ascii=False))
+            f.write(text)
         for attempt in range(20):
             try:
                 os.replace(tmp, p)
@@ -172,7 +177,38 @@ def save(project: dict) -> Path:
         except OSError:
             pass
         raise
-    return p
+
+
+# Which folder each Claude Code session started in, from the SessionStart hook's payload.
+# `tb here` uses it instead of the shell's current folder, which Claude can change.
+SESSION_ROOTS_KEEP = 200
+
+
+def _session_roots_path() -> Path:
+    projects_dir()  # creates the data folder (and keeps it private)
+    return home() / "session-roots.json"
+
+
+def _session_roots() -> dict:
+    try:
+        data = json.loads(_session_roots_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def record_session_root(session_id: str, folder: str) -> None:
+    """Caller holds lock()."""
+    roots = {k: v for k, v in _session_roots().items() if k != session_id}
+    roots[session_id] = {"folder": os.path.realpath(folder), "date": now()}
+    keep = sorted(roots.items(), key=lambda kv: kv[1].get("date", ""))[-SESSION_ROOTS_KEEP:]
+    _write_private(_session_roots_path(), json.dumps(dict(keep), indent=1, ensure_ascii=False))
+
+
+def session_root(session_id: str) -> str | None:
+    entry = _session_roots().get(session_id)
+    folder = entry.get("folder") if isinstance(entry, dict) else None
+    return folder if isinstance(folder, str) and folder else None
 
 
 def reload(project: dict) -> dict:

@@ -108,10 +108,10 @@ a separate plugin: ThreadBack itself works without it.
 
 ## Privacy: what ThreadBack reads, keeps and sends
 
-**In short:** everything stays on your computer. ThreadBack has no server, no account,
-no analytics and makes no network requests. The only thing that leaves your machine is
-the short context it hands to Claude, which travels with your conversation like anything
-you type.
+**In short:** ThreadBack keeps its own data on your computer. It has no server, no
+account, no analytics, and it sends nothing itself. The context it hands to Claude becomes
+part of your conversation, so Claude Code sends it to Anthropic along with everything else
+you type (see "What it sends" below).
 
 **What it reads** (read-only, never changed):
 
@@ -133,8 +133,9 @@ a synced folder):
 
 - `projects/<slug>.json`: one plain, hand-editable file per project: summaries, next
   step, tasks, decisions, and the auto-saved messages from chats after the last save.
-- `dashboard.html`, `hook-errors.log`, and `tb-path` (where the plugin is installed, for
-  the optional panel).
+- `dashboard.html`, `hook-errors.log`, `tb-path` (where the plugin is installed, for
+  the optional panel), and `session-roots.json` (the folder each recent Claude Code chat
+  started in, so `tb here` works on that chat's project; the last 200 chats).
 - On Windows, only if you turn on the welcome window: a login script and a desktop shortcut.
 
 Nothing is stored in this repository, so personal context never gets committed. To
@@ -145,6 +146,10 @@ remove everything, uninstall the plugin and delete `~/.threadback`.
 (and, for a catch-up, a page-long digest of the folder). That text becomes part of your
 conversation, so Claude Code sends it to Anthropic with the rest of the chat, under the
 same terms as your own messages.
+
+**Links you open:** if you save a web link to a project (`tb link`) and later open it
+with `tb open` or from the dashboard, your browser opens it, as clicking the link
+anywhere would. Nothing from your projects is sent with it.
 
 **Secrets:** before anything is saved or handed to Claude, keys and passwords are
 masked as `[REDACTED]`: API keys (Anthropic, OpenAI, GitHub, AWS, Google, Slack,
@@ -162,10 +167,11 @@ less likely to work, though no marker can guarantee that a model ignores them.
 
 **What runs without asking:** so you aren't asked to approve every step, `/threadback` and
 `/threadback-save` may run `tb here show`, `tb here digest` and `tb here save` without a
-prompt, and `/threadback-all` may run `tb list --slugs`. `tb here` reaches only the project
-for the current folder and accepts no other options, so even planted text can't use it to
-read or change another project. Anything else, such as opening another project by name in
-`/threadback-all`, asks first as usual.
+prompt, and `/threadback-all` may run `tb list --slugs`. `tb here` accepts no project name
+and no other options, and it works only on the project for the folder the chat started in
+(recorded when the chat starts), whichever folder the command runs from. So even planted
+text can't use it to read or change another project, nested or not. Anything else, such
+as opening another project by name in `/threadback-all`, asks first as usual.
 
 ## Command line
 
