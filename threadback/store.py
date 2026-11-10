@@ -105,7 +105,7 @@ def new_project(name: str, folder: str | None = None) -> dict:
         "folder": folder or "",
         "next_action": "",
         "last_state": "",
-        "links": [],  # [{"label": "Claude: auth design", "url": "https://..."}]
+        "links": [],  # [{"label": "Claude: auth design", "url": "<the chat's address>"}]
         "decisions": [],  # [{"date", "text", "why"}]
         "tasks": [],  # [{"text", "done", "added", "done_on"}]
         "blockers": [],  # [{"text", "added"}]

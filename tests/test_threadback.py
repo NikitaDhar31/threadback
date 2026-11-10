@@ -103,11 +103,11 @@ class CliTests(TempHome):
 
     def test_link_replace_and_folder(self):
         self.run_cli("new", "Demo")
-        self.run_cli("link", "Demo", "ChatGPT plan", "https://chatgpt.com/c/1")
-        self.run_cli("link", "Demo", "ChatGPT plan", "https://chatgpt.com/c/2")
+        self.run_cli("link", "Demo", "ChatGPT plan", "https://example.com/c/1")
+        self.run_cli("link", "Demo", "ChatGPT plan", "https://example.com/c/2")
         self.run_cli("link", "Demo", "folder", str(self.tmp))
         p = store.find("demo")
-        self.assertEqual(p["links"], [{"label": "ChatGPT plan", "url": "https://chatgpt.com/c/2"}])
+        self.assertEqual(p["links"], [{"label": "ChatGPT plan", "url": "https://example.com/c/2"}])
         self.assertEqual(p["folder"], str(self.tmp.resolve()))
 
     def test_list_suggests_resume(self):
@@ -202,7 +202,7 @@ class DashboardTests(TempHome):
         p["next_action"] = "fix <b>bug</b>"
         p["tasks"].append({"text": "open task", "done": False})
         p["tasks"].append({"text": "closed task", "done": True})
-        p["links"].append({"label": "Claude chat", "url": "https://claude.ai/chat/1"})
+        p["links"].append({"label": "Claude chat", "url": "https://example.com/chat/1"})
         p["sessions"].append({"date": store.now(), "summary": "worked", "next": ""})
         store.save(p)
         html = dashboard.write().read_text(encoding="utf-8")
@@ -211,7 +211,7 @@ class DashboardTests(TempHome):
         self.assertIn("Resume this", html)
         self.assertIn("open task", html)
         self.assertNotIn("closed task", html)
-        self.assertIn('href="https://claude.ai/chat/1"', html)
+        self.assertIn('href="https://example.com/chat/1"', html)
 
     def test_empty_dashboard(self):
         self.assertIn("No projects yet", dashboard.render([]))
@@ -559,7 +559,7 @@ class RedactTests(TempHome):
             "api_key = 12345abcdef": "api_key = [REDACTED]",
             "Authorization: Bearer abcdefghijklmnop1234": "Authorization: Bearer [REDACTED]",
             "postgres://admin:topsecret@db.local/app": "postgres://admin:[REDACTED]@db.local/app",
-            "https://x.com/cb?token=abcdef123456&x=1": "https://x.com/cb?token=[REDACTED]&x=1",
+            "https://example.com/cb?token=abcdef123456&x=1": "https://example.com/cb?token=[REDACTED]&x=1",
         }
         for text, want in cases.items():
             with self.subTest(text):
