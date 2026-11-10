@@ -1,5 +1,6 @@
 {
   "name": "threadback",
+  "displayName": "ThreadBack",
   "version": "0.7.17",
   "description": "Resume where you left off: gives Claude each project's saved next step, tasks and decisions at session start, and saves progress with /threadback-save.",
   "license": "MIT",
@@ -15,5 +16,8 @@
     "context",
     "productivity",
     "session"
-  ]
+  ],
+  "documentationUrl": "https://github.com/NikitaDhar31/threadback#readme",
+  "supportUrl": "https://github.com/NikitaDhar31/threadback/issues",
+  "privacyPolicyUrl": "https://github.com/NikitaDhar31/threadback#privacy-what-threadback-reads-keeps-and-sends"
 }

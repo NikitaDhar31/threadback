@@ -53,7 +53,9 @@ They don't conflict, so you can use both.
 
 ## Requirements
 
-- [Claude Code](https://claude.com/claude-code) on Windows, macOS or Linux.
+- [Claude Code](https://claude.com/claude-code) on Windows, macOS or Linux: the terminal, the
+  desktop app's Code tab or an IDE. In claude.ai chat, hooks don't run and there is no
+  local shell, so ThreadBack does nothing useful there.
 - **Python 3.10 or newer**, available as `python3` (macOS/Linux) or `py` / `python`
   (Windows). If Python is missing, new chats show a message saying so and where to get it.
 - **bash.** macOS and Linux have it. On Windows, install
