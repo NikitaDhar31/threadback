@@ -78,6 +78,23 @@ claude plugin install threadback@threadback
 Then start a new Claude Code chat in a project folder and run `/threadback-save` at the
 end to start tracking it.
 
+**Updating:** plugins from a marketplace you added yourself don't update on their own
+unless you turn on auto-update for it in `/plugin`. To get the latest version:
+
+```bash
+claude plugin marketplace update threadback
+```
+
+```bash
+claude plugin update threadback@threadback
+```
+
+Then restart Claude Code. If you use the panel, update `threadback-panel@threadback` too.
+
+**Uninstalling:** `claude plugin uninstall threadback@threadback` (and
+`threadback-panel@threadback` if you installed it). Your saved projects stay in
+`~/.threadback` until you delete that folder.
+
 ## Commands
 
 | Command | What it does |
@@ -231,4 +248,6 @@ the newest chat files, so it usually adds well under a second.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Created by [Nikita Dhar](https://github.com/NikitaDhar31). MIT licensed: see
+[LICENSE](LICENSE). You're welcome to use, change and share it; copies and forks must
+keep the copyright notice.
