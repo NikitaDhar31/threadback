@@ -165,20 +165,21 @@ def cmd_list(a) -> None:
     if not projects:
         print('No projects yet. Start with: threadback new "My Project" --folder <path>')
         return
+    if not a.all:  # before context(): a finished project's git and chats aren't read at all
+        projects = [p for p in projects if p["status"] != "done"]
     pcs = sorted(((p, context(p)) for p in projects),
                  key=lambda pc: pc[1]["last_activity"] or datetime.min, reverse=True)
-    if not a.all:
-        pcs = [pc for pc in pcs if pc[0]["status"] != "done"]
     pick = suggest_resume(pcs)
+    # /threadback-all hands this list to Claude: names as display_name makes them, and next
+    # steps masked again (saves mask them, but the files are hand-editable).
     if pick:
         print(f"Resume: {store.display_name(pick[0]['name'])} -> "
-              f"{pick[0]['next_action'] or '(no next action saved)'}\n")
-    # /threadback-all hands this list to Claude: names as display_name makes them.
+              f"{redact(pick[0]['next_action']) or '(no next action saved)'}\n")
     w = max(len(store.display_name(p["name"])) for p, _ in pcs) if pcs else 10
     for p, ctx in pcs:
         slug = f"[{p['slug']}]  " if a.slugs else ""
         print(f"  {slug}{store.display_name(p['name']):<{w}}  {p['status']:<8} {ago(ctx['last_activity']):<16} "
-              f"next: {p['next_action'] or '-'}")
+              f"next: {redact(p['next_action']) or '-'}")
 
 
 def cmd_show(a) -> None:
@@ -406,8 +407,14 @@ def cmd_here(a) -> None:
     in an added working directory, must stay out of reach."""
     if a.all and a.action != "digest":
         raise ValueError("--all is for 'here digest' only.")
+    if store.home_inside(os.getcwd()):
+        raise LookupError("ThreadBack's data folder (THREADBACK_HOME) is inside this folder, as a "
+                          "project's own settings could set it, so 'tb here' won't use it.")
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
     root = store.session_root(session_id) if session_id else None
+    if root and store.home_inside(root):
+        raise LookupError("ThreadBack's data folder (THREADBACK_HOME) is inside this chat's "
+                          "project, so 'tb here' won't use it.")
     if not root:
         raise LookupError("ThreadBack can't tell which folder this Claude Code chat started in "
                           "(no SessionStart record for it), so 'tb here' won't guess. Start a new "

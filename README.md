@@ -128,8 +128,10 @@ you type (see "What it sends" below).
   as a few lines of a file, can be included.
 - Nothing else: not your other files, not your browser, not any cloud account.
 
-**What it keeps**, all in `~/.threadback/` (set `THREADBACK_HOME` to move it, e.g. into
-a synced folder):
+**What it keeps**, all in `~/.threadback/`. To move it, e.g. into a synced folder, set
+`THREADBACK_HOME` to an absolute path in your own environment (not in a project's
+settings). A relative path is ignored, and if it points inside the project a chat is in,
+ThreadBack writes nothing there:
 
 - `projects/<slug>.json`: one plain, hand-editable file per project: summaries, next
   step, tasks, decisions, and the auto-saved messages from chats after the last save.

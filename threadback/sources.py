@@ -17,6 +17,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from . import store
 from .redact import redact
 
 # Under pythonw (login / desktop icon) every console child such as git would
@@ -86,7 +87,7 @@ SCAN_FILES = 30
 
 
 def claude_projects_root() -> Path:
-    return Path(os.environ.get("THREADBACK_CLAUDE_DIR") or Path.home() / ".claude" / "projects")
+    return store.env_dir("THREADBACK_CLAUDE_DIR") or Path.home() / ".claude" / "projects"
 
 
 def claude_dir_for(folder: str) -> Path:

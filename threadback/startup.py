@@ -13,6 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import store
 from .sources import NO_WINDOW
 
 SCRIPT_NAME = "ThreadBack.cmd"
@@ -20,9 +21,9 @@ SHORTCUT_NAME = "ThreadBack.lnk"
 
 
 def startup_dir() -> Path:
-    override = os.environ.get("THREADBACK_STARTUP_DIR")
+    override = store.env_dir("THREADBACK_STARTUP_DIR")
     if override:
-        return Path(override)
+        return override
     appdata = os.environ.get("APPDATA")
     if not appdata:
         raise OSError("APPDATA is not set; startup install is only supported on Windows.")
@@ -30,9 +31,9 @@ def startup_dir() -> Path:
 
 
 def desktop_dir() -> Path | None:
-    override = os.environ.get("THREADBACK_DESKTOP_DIR")
+    override = store.env_dir("THREADBACK_DESKTOP_DIR")
     if override:
-        return Path(override)
+        return override
     try:  # handles a Desktop redirected to OneDrive
         r = subprocess.run(
             ["powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"],
@@ -59,8 +60,8 @@ def _package_root() -> Path:
 
 def script_text() -> str:
     lines = ["@echo off", "rem Created by ThreadBack - shows the welcome-back window at login."]
-    if os.environ.get("THREADBACK_HOME"):
-        lines.append(f'set "THREADBACK_HOME={os.environ["THREADBACK_HOME"]}"')
+    if store.env_dir("THREADBACK_HOME"):
+        lines.append(f'set "THREADBACK_HOME={store.home()}"')
     lines += [f'cd /d "{_package_root()}"', f'start "" "{_runner()}" -m threadback welcome', ""]
     return "\r\n".join(lines)
 

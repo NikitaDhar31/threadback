@@ -34,6 +34,14 @@ def run(event: str) -> None:
     try:
         raw = sys.stdin.read()
         payload = json.loads(raw) if raw.strip() else {}
+        if store.home_inside(payload.get("cwd") or os.getcwd()):
+            # THREADBACK_HOME points into this project, as a project's own settings could set
+            # it: write nothing there (not even the lock), and read nothing a repo could ship.
+            if event == "session-start":
+                print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+                      "additionalContext": "ThreadBack is off in this folder: its data folder "
+                                           "(THREADBACK_HOME) is inside the project."}}))
+            return
         with store.lock(timeout=1.0 if event == "session-end" else 5.0):
             out = session_start(payload) if event == "session-start" else session_end(payload)
         if out:

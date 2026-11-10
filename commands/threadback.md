@@ -1,6 +1,6 @@
 ---
 description: Show where you left off on this project (ThreadBack)
-allowed-tools: ['Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here show:*)']
+allowed-tools: ['Bash(bash "${CLAUDE_PLUGIN_ROOT}/scripts/tb" here show)']
 ---
 
 Run this to get the saved context for the project in the current folder:

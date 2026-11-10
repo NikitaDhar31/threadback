@@ -313,7 +313,8 @@ class PluginTests(TempHome):
         self.assertTrue(rec[0]["ended"])
 
     def test_session_start_in_untracked_folder_gives_hint(self):
-        out = json.loads(self.hook("session-start", {"session_id": "s1", "cwd": str(self.tmp)}))
+        (self.tmp / "untracked").mkdir()
+        out = json.loads(self.hook("session-start", {"session_id": "s1", "cwd": str(self.tmp / "untracked")}))
         self.assertIn("not a tracked project", out["hookSpecificOutput"]["additionalContext"])
         self.assertEqual(store.load_all(), [])
 
@@ -789,20 +790,62 @@ class HereCommandTests(TempHome):
             self.assertNotIn(cm.exception.code, (0, None))
         self.assertEqual(store.find("mine"), mine)
 
+    def test_list_masks_secrets_and_skips_done_projects_unread(self):
+        # Round 10: /threadback-all hands this list to Claude, and the files are hand-editable,
+        # so a key typed into one must still be masked. Done projects aren't even read.
+        key = "ghp_" + "a" * 36
+        p = store.find("secret")
+        p["next_action"] = f"deploy with {key}"
+        path = store.path_for(p["slug"])
+        path.write_text(json.dumps(p), encoding="utf-8")  # by hand: save() would mask it
+        p = store.find("inner")
+        p["status"] = "done"
+        store.save(p)
+        read = []
+        real = cli.context
+        with mock.patch.object(cli, "context", lambda proj: read.append(proj["slug"]) or real(proj)):
+            listed = self.tb("list", "--slugs")
+        self.assertNotIn(key, listed)
+        self.assertIn("[REDACTED]", listed)
+        self.assertNotIn("inner", read)
+        self.assertNotIn("INNER", listed)
+
+    def test_relative_or_in_project_data_folder_is_refused(self):
+        # Round 10: a project's .claude/settings.json can set THREADBACK_HOME for the session.
+        with mock.patch.dict(os.environ, {"THREADBACK_HOME": ".threadback-data"}), \
+                mock.patch("sys.stderr", io.StringIO()) as err:
+            store._warned.discard("THREADBACK_HOME")
+            self.assertEqual(store.home(), Path.home() / ".threadback")
+        self.assertIn("must be an absolute path", err.getvalue())
+        inside = self.tmp / "mine" / ".threadback-data"
+        with mock.patch.dict(os.environ, {"THREADBACK_HOME": str(inside)}):
+            out = io.StringIO()
+            with mock.patch("sys.stdin", io.StringIO(json.dumps({"session_id": "s2", "cwd": str(self.tmp / "mine")}))), \
+                    redirect_stdout(out):
+                cli.main(["hook", "session-start"])
+            self.assertIn("ThreadBack is off in this folder", out.getvalue())
+            with self.assertRaises(SystemExit) as cm:
+                self.tb("here", "show")
+            self.assertIn("inside this folder", str(cm.exception.code))
+        self.assertFalse(inside.exists())  # nothing written there, not even the lock
+
     def test_slash_commands_approve_only_here_and_list(self):
         import re
         script = '"${CLAUDE_PLUGIN_ROOT}/scripts/tb" '
         for md in sorted((Path(__file__).resolve().parent.parent / "commands").glob("*.md")):
             text = md.read_text(encoding="utf-8")
-            approved = re.findall(r"Bash\(bash " + re.escape(script) + r"([^:)]*):\*\)", text)
+            approved = re.findall(r"Bash\(bash " + re.escape(script) + r"([^)]*)\)", text)
             with self.subTest(command=md.name):
-                self.assertTrue(set(approved) <= {"here show", "here digest", "here save", "list --slugs"},
-                                approved)
+                # Exact rules, except `here save`, whose values follow in a heredoc (and which
+                # refuses any argument). A trailing :* would let extra options through (round 10).
+                self.assertTrue(set(approved) <= {"here show", "here digest", "here digest --all",
+                                                  "here save:*", "list --slugs"}, approved)
                 self.assertNotIn("Bash(*)", text)
                 # Every tb call these commands make without a project name is one that's approved
                 for call in re.findall(r"^\s*bash " + re.escape(script) + r"(.*)$", text, re.M):
                     if "SLUG" not in call:
-                        self.assertTrue(any(call.startswith(a) for a in approved), call)
+                        self.assertTrue(any(call == a or a.endswith(":*") and call.startswith(a[:-2] + " ")
+                                            for a in approved), call)
                 # Claude Code always asks for a command with a brace next to a quote, whatever
                 # allowed-tools says, so the save example sends lines, not JSON.
                 for body in re.findall(r"<<'(\w+)'\n(.*?)\n\s*\1\b", text, re.S):

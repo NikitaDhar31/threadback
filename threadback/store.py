@@ -16,9 +16,34 @@ from .redact import redact_obj
 STATUSES = ("active", "paused", "blocked", "done")
 
 
+_warned: set[str] = set()
+
+
+def env_dir(name: str) -> Path | None:
+    """A folder named by an environment variable, only if it's an absolute path. A project's
+    .claude/settings.json can set variables for a Claude Code session, and a relative one
+    would put ThreadBack's files (or reads) inside that project's folder."""
+    value = os.environ.get(name)
+    if not value:
+        return None
+    if not os.path.isabs(value):
+        if name not in _warned:
+            _warned.add(name)
+            print(f"warning: ignoring {name}={value!r}: it must be an absolute path", file=sys.stderr)
+        return None
+    return Path(value)
+
+
 def home() -> Path:
-    """Data directory. Override with THREADBACK_HOME (used by tests)."""
-    return Path(os.environ.get("THREADBACK_HOME") or Path.home() / ".threadback")
+    """Data directory. Override with THREADBACK_HOME, an absolute path (tests use it)."""
+    return env_dir("THREADBACK_HOME") or Path.home() / ".threadback"
+
+
+def home_inside(folder: str) -> bool:
+    """True if the data directory is `folder` or inside it, e.g. THREADBACK_HOME set by a
+    project's own settings to a folder in the project: nothing may be written there."""
+    data, top = _norm(str(home())), _norm(folder)
+    return data == top or data.startswith(top + os.sep)
 
 
 def projects_dir() -> Path:
